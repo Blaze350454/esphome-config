@@ -1,0 +1,36 @@
+name: Validate ESPHome Configs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  esphome-config-check:
+    name: ESPHome Config Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stage fake secrets for CI
+        run: cp ci/fake_secrets.yaml secrets.yaml
+
+      - name: Validate each device YAML
+        run: |
+          set -e
+          shopt -s nullglob
+          fail=0
+          for yaml in *.yaml archive/*.yaml; do
+            [ "$(basename "$yaml")" = "secrets.yaml" ] && continue
+            echo "::group::$yaml"
+            if docker run --rm -v "$PWD":/config ghcr.io/esphome/esphome:stable config "$yaml"; then
+              echo "OK: $yaml"
+            else
+              echo "FAIL: $yaml"
+              fail=1
+            fi
+            echo "::endgroup::"
+          done
+          exit $fail
