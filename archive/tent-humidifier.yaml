@@ -1,0 +1,68 @@
+# Tent Humidifier Controller
+# ESP32 DevKit C — handles fan PWM and water temperature monitoring.
+# Fogger on/off is via a smart plug controlled by HA automations.
+# Reservoir refill is mechanical (float valve, no electronics).
+#
+# GPIO Assignments:
+#   GPIO4  — Dallas 1-Wire (DS18B20 reservoir temp)
+#   GPIO25 — Fan PWM output (LEDC, 25kHz for Noctua)
+#   GPIO33 — Noctua tach input (fan RPM feedback)
+#   GPIO26, GPIO27, GPIO32 — available (freed from removed XKC/relay)
+
+esphome:
+  name: tent-humidifier
+  friendly_name: "Tent Humidifier"
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+api:
+  encryption:
+    key: !secret api_key
+
+ota:
+  platform: esphome
+
+logger:
+
+# --- Dallas 1-Wire (reservoir temp) ---
+one_wire:
+  - platform: gpio
+    pin: GPIO4
+
+sensor:
+  - platform: dallas_temp
+    address: 0x0000000000000000  # TODO: scan and fill in actual address
+    name: "Humidifier Reservoir Temperature"
+    update_interval: 30s
+
+  # Noctua tach: 2 pulses per revolution, open-collector output
+  - platform: pulse_counter
+    pin:
+      number: GPIO33
+      mode: INPUT_PULLUP
+    name: "Humidifier Fan RPM"
+    unit_of_measurement: "RPM"
+    update_interval: 5s
+    internal_filter: 13us  # ignore pulses shorter than 13µs (noise/bounce filter)
+    filters:
+      - multiply: 0.5  # 2 pulses per rev → divide count by 2
+
+# --- Noctua Fan PWM ---
+output:
+  - platform: ledc
+    pin: GPIO25
+    frequency: 25000Hz
+    id: fan_pwm_output
+
+fan:
+  - platform: speed
+    output: fan_pwm_output
+    name: "Humidifier Fan"
+    id: humidifier_fan

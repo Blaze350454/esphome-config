@@ -1,0 +1,195 @@
+esphome:
+  name: grow-tent-one
+  friendly_name: grow-tent-one
+
+esp32:
+  board: esp32-c3-devkitm-1
+  framework:
+    type: esp-idf
+
+logger:
+
+api:
+  encryption:
+    key: "aLd013vJHbp2oOTLdp4wwq4FXmv4oFncmHfXi/r0TsQ="
+
+ota:
+  - platform: esphome
+    password: "97c3cfeb40ed169d44b446a2706aafcf"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "Grow-Tent-One Fallback Hotspot"
+    password: "0icVAHSiXIcT"
+
+captive_portal:
+
+################ Dallas 1-Wire (DS18B20 reservoir temp) ################
+one_wire:
+  - platform: gpio
+    pin: GPIO0
+
+################ Humidifier Fan PWM (Noctua NF-F12 iPPC 3000) ################
+output:
+  - platform: ledc
+    pin: GPIO1
+    id: humidifier_fan_pwm_output
+    frequency: 25000Hz
+    max_power: 0.99
+
+fan:
+  - platform: speed
+    output: humidifier_fan_pwm_output
+    name: "Humidifier Fan PWM"
+    id: humidifier_fan_pwm
+
+################ Sensors ################
+sensor:
+  # CO2 Sensor (existing)
+  - platform: adc
+    pin: GPIO3
+    name: "Raw ADC Reading"
+    update_interval: 5s
+    attenuation: 12db
+    id: raw_adc
+
+  - platform: template
+    name: "Corrected CO2 Voltage"
+    unit_of_measurement: "V"
+    update_interval: 5s
+    lambda: |-
+      float raw_value = id(raw_adc).state;
+      float correction_factor = 1.4 / 0.00113;
+      return (raw_value / 4095.0) * 3.3 * correction_factor;
+    id: corrected_voltage
+
+  - platform: template
+    name: "CO2 Concentration"
+    unit_of_measurement: "ppm"
+    icon: "mdi:molecule-co2"
+    update_interval: 10s
+    lambda: |-
+      const float V_REF = 3.3;
+      const float EMF_ZERO = 0.220;
+      const float EMF_SPAN = 0.030;
+
+      static std::array<float, 10> readings = {0};
+      static size_t reading_index = 0;
+
+      float v_out = id(corrected_voltage).state;
+
+      ESP_LOGD("CO2_SENSOR", "Raw voltage: %.5f V", v_out);
+
+      if (v_out >= 0.1 && v_out <= V_REF) {
+        float emf = V_REF - v_out;
+
+        ESP_LOGD("CO2_SENSOR", "Calculated EMF: %.5f V", emf);
+
+        float ppm;
+        if (emf >= EMF_ZERO) {
+          ppm = 400.0;
+        } else {
+          ppm = 400.0 * pow(10, (EMF_ZERO - emf) / EMF_SPAN);
+        }
+
+        ESP_LOGD("CO2_SENSOR", "Calculated PPM: %.2f", ppm);
+
+        readings[reading_index] = ppm;
+        reading_index = (reading_index + 1) % 10;
+      } else {
+        ESP_LOGW("CO2_SENSOR", "Voltage out of range: %.5f V", v_out);
+      }
+
+      std::array<float, 10> sorted_readings = readings;
+      std::sort(sorted_readings.begin(), sorted_readings.end());
+
+      float sum = 0;
+      for (size_t i = 2; i < 8; i++) {
+        sum += sorted_readings[i];
+      }
+      float average = sum / 6;
+
+      ESP_LOGD("CO2_SENSOR", "Final average PPM: %.2f", average);
+      return average;
+
+  # Humidifier fan tach / RPM (Noctua green wire, 2 pulses per revolution)
+  - platform: pulse_counter
+    pin:
+      number: GPIO18
+      mode:
+        input: true
+        pullup: true
+    name: "Humidifier Fan RPM"
+    id: humidifier_fan_rpm
+    update_interval: 5s
+    count_mode:
+      rising_edge: INCREMENT
+      falling_edge: DISABLE
+    use_pcnt: false
+    internal_filter: 100us
+    unit_of_measurement: "RPM"
+    accuracy_decimals: 0
+    filters:
+      - multiply: 0.288
+
+  # DS18B20 reservoir temperature
+  # NOTE: Address TBD  flash once, check logs for scanned address, then add here
+  - platform: dallas_temp
+    name: "Humidifier Reservoir Temperature"
+    id: humidifier_reservoir_temp
+    update_interval: 30s
+
+################ Switches ################
+switch:
+  - platform: gpio
+    name: "Table Drain Pump"
+    pin: GPIO10
+    id: table_drain_pump_irrigation_tent
+    on_turn_on:
+      - lambda: |-
+          id(manual_table_drain_pump_irrigation_tent_switch_override) = true;
+    on_turn_off:
+      - lambda: |-
+          id(manual_table_drain_pump_irrigation_tent_switch_override) = true;
+
+  - platform: gpio
+    name: "Extra Relay"
+    pin:
+      number: GPIO5
+      inverted: false
+    id: extra_relay
+
+################ Globals ################
+globals:
+  - id: manual_table_drain_pump_irrigation_tent_switch_override
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+################ Binary Sensors ################
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: GPIO6
+      mode: INPUT_PULLUP
+      inverted: true
+    name: "Table Drain Empty"
+    id: table_drain_empty_irrigation_tent
+    device_class: moisture
+    filters:
+      - delayed_on: 5s
+      - delayed_off: 5s
+
+  - platform: gpio
+    pin:
+      number: GPIO7
+      mode: INPUT_PULLUP
+      inverted: true
+    name: "Table Drain Full"
+    id: table_drain_full_irrigation_tent
+    device_class: moisture
+    filters:
+      - delayed_on: 5s
+      - delayed_off: 5s
