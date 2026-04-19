@@ -22,7 +22,9 @@ jobs:
           set -e
           shopt -s nullglob
           fail=0
-          for yaml in *.yaml archive/*.yaml; do
+          # Only validate active devices. archive/ holds historical configs
+          # that may target older ESPHome versions and aren't deployed.
+          for yaml in *.yaml; do
             [ "$(basename "$yaml")" = "secrets.yaml" ] && continue
             echo "::group::$yaml"
             if docker run --rm -v "$PWD":/config ghcr.io/esphome/esphome:stable config "$yaml"; then
