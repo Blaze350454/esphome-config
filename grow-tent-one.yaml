@@ -11,18 +11,18 @@ logger:
 
 api:
   encryption:
-    key: "aLd013vJHbp2oOTLdp4wwq4FXmv4oFncmHfXi/r0TsQ="
+    key: !secret grow_tent_one_api_key
 
 ota:
   - platform: esphome
-    password: "97c3cfeb40ed169d44b446a2706aafcf"
+    password: !secret grow_tent_one_ota_password
 
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
   ap:
     ssid: "Grow-Tent-One Fallback Hotspot"
-    password: "0icVAHSiXIcT"
+    password: !secret grow_tent_one_ap_password
 
 captive_portal:
 

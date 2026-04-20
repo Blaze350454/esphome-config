@@ -11,18 +11,18 @@ logger:
 
 api:
   encryption:
-    key: "6QW8BdnIVJgYu+IoT/SGzCpkUOMSvI2ksIbLwLHsLUA="
+    key: !secret tent_irrigation_api_key
 
 ota:
   - platform: esphome
-    password: "e9d18a3d5531692f06956f87737ce080"
+    password: !secret tent_irrigation_ota_password
 
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
   ap:
     ssid: "Tent-Irrigation-Controller"
-    password: "qLhuT30xVe6X"
+    password: !secret tent_irrigation_ap_password
 
 captive_portal:
 

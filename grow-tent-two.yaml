@@ -10,7 +10,7 @@ wifi:
   password: !secret wifi_password
   ap:
     ssid: "Grow-Tent-Two Fallback Hotspot"
-    password: "8gtDSGg8VOGE"
+    password: !secret grow_tent_two_ap_password
 
 captive_portal:
 
@@ -19,11 +19,11 @@ logger:
 
 api:
   encryption:
-    key: "crWQFymmaRaTtmHnstNsf7orCS5EuySCqUTZgIJVkC8="
+    key: !secret grow_tent_two_api_key
 
 ota:
   - platform: esphome
-    password: "5273ad688c55b1ff468bb830f56a34a9"
+    password: !secret grow_tent_two_ota_password
 
 cd74hc4067:
   id: cd74hc4067_1
