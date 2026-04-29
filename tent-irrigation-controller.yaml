@@ -156,7 +156,7 @@ sensor:
      update_interval: 2s
      filters:
        - lambda: |-
-           float psi = (x - 0.333f) / (3.0f - 0.333f) * 100.0f;
+           float psi = (x - 0.333f) / (3.0f - 0.333f) * 30.0f;
            return psi < 0.0f ? 0.0f : psi;
        - sliding_window_moving_average:
            window_size: 5
@@ -190,10 +190,27 @@ sensor:
    - platform: adc
      pin: GPIO34
      name: "Pressure Pre-Reg RAW Voltage"
+     id: pressure_pre_reg_raw_irrigation_tent
      attenuation: 12db
      update_interval: 2s
      unit_of_measurement: "V"
-     accuracy_decimals: 3     
+     accuracy_decimals: 3
+
+   - platform: copy
+     source_id: pressure_pre_reg_raw_irrigation_tent
+     name: "Pressure Pre-Regulator"
+     id: pressure_pre_regulator_irrigation_tent
+     filters:
+       - lambda: |-
+           float psi = (x - 0.333f) / (3.0f - 0.333f) * 30.0f;
+           return psi < 0.0f ? 0.0f : psi;
+       - sliding_window_moving_average:
+           window_size: 5
+           send_every: 5
+     unit_of_measurement: "psi"
+     device_class: pressure
+     state_class: measurement
+     accuracy_decimals: 1
 
 
 output:
