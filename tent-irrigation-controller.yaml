@@ -38,6 +38,10 @@ binary_sensor:
      filters:
        - delayed_on: 2s
        - delayed_off: 2s
+     on_release:
+       - pulse_counter.set_total_pulses:
+           id: flow_rate_irrigation_tent
+           value: 0
 
    - platform: gpio
      pin:
@@ -171,7 +175,7 @@ sensor:
      update_interval: 60s
      filters:
        - lambda: |-
-           return x / 7.5f;
+           return x / 396.0f;
      unit_of_measurement: "L/min"
      state_class: measurement
      accuracy_decimals: 2
@@ -181,7 +185,7 @@ sensor:
        unit_of_measurement: "L"
        state_class: total_increasing
        filters:
-         - lambda: return x / 7.5f;
+         - lambda: return x / 396.0f;
 
    - platform: adc
      pin: GPIO34
