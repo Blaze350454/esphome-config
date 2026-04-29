@@ -172,7 +172,7 @@ sensor:
        mode: INPUT_PULLUP
      name: "Flow Rate"
      id: flow_rate_irrigation_tent
-     update_interval: 60s
+     update_interval: 5s
      filters:
        - lambda: |-
            return x / 396.0f;
