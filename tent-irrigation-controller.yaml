@@ -173,9 +173,10 @@ sensor:
      name: "Flow Rate"
      id: flow_rate_irrigation_tent
      update_interval: 5s
+     # Calibration: 62.72 pulses/L (bucket test 2026-05-10: 127 pulses for 2.025 L)
      filters:
        - lambda: |-
-           return x / 396.0f;
+           return x / 62.72f;
      unit_of_measurement: "L/min"
      state_class: measurement
      accuracy_decimals: 2
@@ -185,7 +186,7 @@ sensor:
        unit_of_measurement: "L"
        state_class: total_increasing
        filters:
-         - lambda: return x / 396.0f;
+         - lambda: return x / 62.72f;
 
    - platform: adc
      pin: GPIO34
