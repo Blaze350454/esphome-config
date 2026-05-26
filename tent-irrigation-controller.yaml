@@ -209,7 +209,6 @@ sensor:
            window_size: 5
            send_every: 5
      unit_of_measurement: "psi"
-     device_class: pressure
      state_class: measurement
      accuracy_decimals: 1
 
