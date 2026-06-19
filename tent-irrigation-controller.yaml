@@ -1,3 +1,16 @@
+substitutions:
+  # --- Failsafe / fault-detection knobs (added 2026-06-19) ---
+  valve_max_on_time: 40min            # On-device per-valve auto-close ceiling. Set ABOVE the
+                                      # longest legitimate open (~30 min) so it only trips on a
+                                      # genuine stuck-open / HA-hung event. Runs on the ESP, so it
+                                      # protects even when HA is unreachable.
+  pressure_disconnect_voltage: "0.20" # ADC volts below this = transducer unpowered/disconnected.
+                                      # A healthy 0.5-4.5V sensor sits at ~0.333V (0 psi) through the
+                                      # divider; nothing powered ever reads this low. Tune from logs.
+  pressure_overrange_psi: "32.0"      # psi above this on a 30-psi sensor = over-range / fault.
+                                      # Must keep the decimal point — '32' alone makes an invalid
+                                      # C++ literal '32f' in the lambda below.
+
 esphome:
   name: tent-irrigation-controller
   friendly_name: Tent Irrigation Controller
@@ -12,6 +25,10 @@ logger:
 api:
   encryption:
     key: !secret tent_irrigation_api_key
+  # Second-layer failsafe: if no API client (HA) is connected for this long, reboot.
+  # All GPIO outputs default OFF on boot, so every valve closes. Primary protection is
+  # the per-valve watchdog below, which runs on-device regardless of HA.
+  reboot_timeout: 10min
 
 ota:
   - platform: esphome
@@ -25,6 +42,17 @@ wifi:
     password: !secret tent_irrigation_ap_password
 
 captive_portal:
+
+# Raw ADC voltage captured pre-conversion, used by the pressure-fault detector below.
+globals:
+  - id: pre_reg_voltage
+    type: float
+    restore_value: no
+    initial_value: '0.333'
+  - id: post_reg_voltage
+    type: float
+    restore_value: no
+    initial_value: '0.333'
 
 binary_sensor:
    - platform: gpio
@@ -78,6 +106,10 @@ binary_sensor:
      filters:
        - delayed_on: 2s
        - delayed_off: 2s
+     # On-device overfill interlock: feed reservoir full -> close feed fill valve,
+     # independent of HA. Backstops automation.irrigation_block_feed_fill_when_reservoir_full.
+     on_press:
+       - valve.close: feed_fill_irrigation_valve_tent
 
    - platform: gpio
      pin:
@@ -114,6 +146,27 @@ binary_sensor:
      filters:
        - delayed_on: 2s
        - delayed_off: 2s
+     # On-device overfill interlock: flush reservoir full -> close flush fill valve,
+     # independent of HA. Backstops automation.irrigation_block_flush_fill_when_reservoir_full.
+     on_press:
+       - valve.close: flush_fill_valve_irrigation_tent
+
+   # Fault flag for the pressure transducers. ON = a sensor looks disconnected/unpowered
+   # (raw ADC volts below the electrical floor) OR is reading over-range. Informational only
+   # (no valve action) — HA decides what to do. delayed_on avoids flagging transient spikes.
+   - platform: template
+     name: "Pressure Sensor Fault"
+     id: pressure_sensor_fault
+     device_class: problem
+     lambda: |-
+       bool pre_dead   = id(pre_reg_voltage)  < ${pressure_disconnect_voltage}f;
+       bool post_dead  = id(post_reg_voltage) < ${pressure_disconnect_voltage}f;
+       bool pre_over    = id(pressure_pre_regulator_irrigation_tent).state  > ${pressure_overrange_psi}f;
+       bool post_over   = id(pressure_post_regulator_irrigation_tent).state > ${pressure_overrange_psi}f;
+       return pre_dead || post_dead || pre_over || post_over;
+     filters:
+       - delayed_on: 30s
+       - delayed_off: 10s
 
 one_wire:
    - platform: gpio
@@ -130,23 +183,24 @@ sensor:
      name: "Flush Temperature"
      id: flush_temperature_irrigation_tent
 
-   #- platform: adc
-     #pin: GPIO34
-     #name: "Pressure Pre-Regulator"
-     #id: pressure_pre_regulator_irrigation_tent
-     #attenuation: 12db
-     #update_interval: 2s
-     #filters:
-       #- lambda: |-
-           #float psi = (x - 0.333f) / (3.0f - 0.333f) * 100.0f;
-           #return psi < 0.0f ? 0.0f : psi;
-       #- sliding_window_moving_average:
-           #window_size: 5
-           #send_every: 5
-     #unit_of_measurement: "psi"
-    # device_class: pressure
-    # state_class: measurement
-    # accuracy_decimals: 1
+   - platform: adc
+     pin: GPIO34
+     name: "Pressure Pre-Regulator"
+     id: pressure_pre_regulator_irrigation_tent
+     attenuation: 12db
+     update_interval: 2s
+     filters:
+       - lambda: |-
+           id(pre_reg_voltage) = x;
+           float psi = (x - 0.333f) / (3.0f - 0.333f) * 30.0f;
+           return psi < 0.0f ? 0.0f : psi;
+       - sliding_window_moving_average:
+           window_size: 5
+           send_every: 5
+     unit_of_measurement: "psi"
+     device_class: pressure
+     state_class: measurement
+     accuracy_decimals: 1
 
    - platform: adc
      pin: GPIO35
@@ -156,6 +210,7 @@ sensor:
      update_interval: 2s
      filters:
        - lambda: |-
+           id(post_reg_voltage) = x;
            float psi = (x - 0.333f) / (3.0f - 0.333f) * 30.0f;
            return psi < 0.0f ? 0.0f : psi;
        - sliding_window_moving_average:
@@ -187,30 +242,6 @@ sensor:
        state_class: total_increasing
        filters:
          - lambda: return x / 62.72f;
-
-   - platform: adc
-     pin: GPIO34
-     name: "Pressure Pre-Reg RAW Voltage"
-     id: pressure_pre_reg_raw_irrigation_tent
-     attenuation: 12db
-     update_interval: 2s
-     unit_of_measurement: "V"
-     accuracy_decimals: 3
-
-   - platform: copy
-     source_id: pressure_pre_reg_raw_irrigation_tent
-     name: "Pressure Pre-Regulator"
-     id: pressure_pre_regulator_irrigation_tent
-     filters:
-       - lambda: |-
-           float psi = (x - 0.333f) / (3.0f - 0.333f) * 30.0f;
-           return psi < 0.0f ? 0.0f : psi;
-       - sliding_window_moving_average:
-           window_size: 5
-           send_every: 5
-     unit_of_measurement: "psi"
-     state_class: measurement
-     accuracy_decimals: 1
 
 
 output:
@@ -244,14 +275,55 @@ output:
        mode: OUTPUT
      id: feed_valve_irrigation_tent_output
 
+# On-device per-valve max-on watchdogs. open_action starts the matching script (mode: restart,
+# so re-opening restarts the timer); close_action cancels it. If a valve stays open past
+# ${valve_max_on_time}, the ESP force-closes it — no HA involvement required.
+script:
+  - id: watchdog_flush_drain_valve
+    mode: restart
+    then:
+      - delay: ${valve_max_on_time}
+      - logger.log: "WATCHDOG: Flush Drain Valve exceeded max-on time — force closing"
+      - valve.close: flush_drain_valve_irrigation_tent
+
+  - id: watchdog_flush_valve
+    mode: restart
+    then:
+      - delay: ${valve_max_on_time}
+      - logger.log: "WATCHDOG: Flush Valve exceeded max-on time — force closing"
+      - valve.close: flush_valve_irrigation_tent
+
+  - id: watchdog_flush_fill_valve
+    mode: restart
+    then:
+      - delay: ${valve_max_on_time}
+      - logger.log: "WATCHDOG: Flush Fill Valve exceeded max-on time — force closing"
+      - valve.close: flush_fill_valve_irrigation_tent
+
+  - id: watchdog_feed_fill_valve
+    mode: restart
+    then:
+      - delay: ${valve_max_on_time}
+      - logger.log: "WATCHDOG: Feed Fill Valve exceeded max-on time — force closing"
+      - valve.close: feed_fill_irrigation_valve_tent
+
+  - id: watchdog_feed_valve
+    mode: restart
+    then:
+      - delay: ${valve_max_on_time}
+      - logger.log: "WATCHDOG: Feed Valve exceeded max-on time — force closing"
+      - valve.close: feed_valve_irrigation_tent
+
 valve:
    - platform: template
      name: "Flush Drain Valve"
      id: flush_drain_valve_irrigation_tent
      open_action:
        - output.turn_on: flush_drain_valve_irrigation_tent_output
+       - script.execute: watchdog_flush_drain_valve
      close_action:
        - output.turn_off: flush_drain_valve_irrigation_tent_output
+       - script.stop: watchdog_flush_drain_valve
      optimistic: true
 
    - platform: template
@@ -259,8 +331,10 @@ valve:
      id: flush_valve_irrigation_tent
      open_action:
        - output.turn_on: flush_valve_irrigation_tent_output
+       - script.execute: watchdog_flush_valve
      close_action:
        - output.turn_off: flush_valve_irrigation_tent_output
+       - script.stop: watchdog_flush_valve
      optimistic: true
 
    - platform: template
@@ -268,8 +342,10 @@ valve:
      id: flush_fill_valve_irrigation_tent
      open_action:
        - output.turn_on: flush_fill_valve_irrigation_tent_output
+       - script.execute: watchdog_flush_fill_valve
      close_action:
        - output.turn_off: flush_fill_valve_irrigation_tent_output
+       - script.stop: watchdog_flush_fill_valve
      optimistic: true
 
    - platform: template
@@ -277,8 +353,10 @@ valve:
      id: feed_fill_irrigation_valve_tent
      open_action:
        - output.turn_on: feed_fill_valve_irrigation_tent_output
+       - script.execute: watchdog_feed_fill_valve
      close_action:
        - output.turn_off: feed_fill_valve_irrigation_tent_output
+       - script.stop: watchdog_feed_fill_valve
      optimistic: true
 
    - platform: template
@@ -286,7 +364,8 @@ valve:
      id: feed_valve_irrigation_tent
      open_action:
        - output.turn_on: feed_valve_irrigation_tent_output
+       - script.execute: watchdog_feed_valve
      close_action:
        - output.turn_off: feed_valve_irrigation_tent_output
+       - script.stop: watchdog_feed_valve
      optimistic: true
-
