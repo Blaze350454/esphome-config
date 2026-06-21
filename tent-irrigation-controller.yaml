@@ -1,15 +1,9 @@
 substitutions:
-  # --- Failsafe / fault-detection knobs (added 2026-06-19) ---
+  # --- Failsafe knobs (added 2026-06-19) ---
   valve_max_on_time: 40min            # On-device per-valve auto-close ceiling. Set ABOVE the
                                       # longest legitimate open (~30 min) so it only trips on a
                                       # genuine stuck-open / HA-hung event. Runs on the ESP, so it
                                       # protects even when HA is unreachable.
-  pressure_disconnect_voltage: "0.20" # ADC volts below this = transducer unpowered/disconnected.
-                                      # A healthy 0.5-4.5V sensor sits at ~0.333V (0 psi) through the
-                                      # divider; nothing powered ever reads this low. Tune from logs.
-  pressure_overrange_psi: "32.0"      # psi above this on a 30-psi sensor = over-range / fault.
-                                      # Must keep the decimal point — '32' alone makes an invalid
-                                      # C++ literal '32f' in the lambda below.
 
 esphome:
   name: tent-irrigation-controller
@@ -42,17 +36,6 @@ wifi:
     password: !secret tent_irrigation_ap_password
 
 captive_portal:
-
-# Raw ADC voltage captured pre-conversion, used by the pressure-fault detector below.
-globals:
-  - id: pre_reg_voltage
-    type: float
-    restore_value: no
-    initial_value: '0.333'
-  - id: post_reg_voltage
-    type: float
-    restore_value: no
-    initial_value: '0.333'
 
 binary_sensor:
    - platform: gpio
@@ -151,23 +134,6 @@ binary_sensor:
      on_press:
        - valve.close: flush_fill_valve_irrigation_tent
 
-   # Fault flag for the pressure transducers. ON = a sensor looks disconnected/unpowered
-   # (raw ADC volts below the electrical floor) OR is reading over-range. Informational only
-   # (no valve action) — HA decides what to do. delayed_on avoids flagging transient spikes.
-   - platform: template
-     name: "Pressure Sensor Fault"
-     id: pressure_sensor_fault
-     device_class: problem
-     lambda: |-
-       bool pre_dead   = id(pre_reg_voltage)  < ${pressure_disconnect_voltage}f;
-       bool post_dead  = id(post_reg_voltage) < ${pressure_disconnect_voltage}f;
-       bool pre_over    = id(pressure_pre_regulator_irrigation_tent).state  > ${pressure_overrange_psi}f;
-       bool post_over   = id(pressure_post_regulator_irrigation_tent).state > ${pressure_overrange_psi}f;
-       return pre_dead || post_dead || pre_over || post_over;
-     filters:
-       - delayed_on: 30s
-       - delayed_off: 10s
-
 one_wire:
    - platform: gpio
      pin: GPIO4
@@ -191,7 +157,6 @@ sensor:
      update_interval: 2s
      filters:
        - lambda: |-
-           id(pre_reg_voltage) = x;
            float psi = (x - 0.333f) / (3.0f - 0.333f) * 30.0f;
            return psi < 0.0f ? 0.0f : psi;
        - sliding_window_moving_average:
@@ -210,7 +175,6 @@ sensor:
      update_interval: 2s
      filters:
        - lambda: |-
-           id(post_reg_voltage) = x;
            float psi = (x - 0.333f) / (3.0f - 0.333f) * 30.0f;
            return psi < 0.0f ? 0.0f : psi;
        - sliding_window_moving_average:
@@ -274,6 +238,20 @@ output:
        number: GPIO27
        mode: OUTPUT
      id: feed_valve_irrigation_tent_output
+
+   # ---- Air-pinch servo PWM (added 2026-06-20) ----
+   # 50 Hz signal pins for the two DS3225 servos that drive the reservoir air-line pinch
+   # valves. Servo POWER comes from a dedicated XL4016 buck @ 6.0V (NOT the ESP board);
+   # only these signal wires land on the ESP32. GPIO5 is a strapping pin and emits a brief
+   # PWM blip at boot — harmless, the over-center cam holds the pinch position through it.
+   - platform: ledc
+     pin: GPIO33
+     frequency: 50 Hz
+     id: feed_air_servo_pwm
+   - platform: ledc
+     pin: GPIO5
+     frequency: 50 Hz
+     id: flush_air_servo_pwm
 
 # On-device per-valve max-on watchdogs. open_action starts the matching script (mode: restart,
 # so re-opening restarts the timer); close_action cancels it. If a valve stays open past
@@ -369,3 +347,54 @@ valve:
        - output.turn_off: feed_valve_irrigation_tent_output
        - script.stop: watchdog_feed_valve
      optimistic: true
+
+# ---- Reservoir air-line pinch servos (added 2026-06-20) ----
+# Two DS3225 servos drive over-center cam pinch valves on the 1/2" air lines feeding the
+# feed and flush reservoirs. auto_detach_time makes the servo go limp ~1.5s after reaching
+# position so it holds ZERO current/torque (the cam's mechanical over-center stop holds the
+# pinch). No max-on watchdog like the fluid valves — air pinch has no flood risk.
+servo:
+   - id: feed_air_servo
+     output: feed_air_servo_pwm
+     auto_detach_time: 1.5s
+     transition_length: 0.7s
+     # min_level/max_level: add + tune pulse widths if -100%/100% over-travels the cam stops.
+   - id: flush_air_servo
+     output: flush_air_servo_pwm
+     auto_detach_time: 1.5s
+     transition_length: 0.7s
+
+# Air-line control. ON  = air flowing (hose OPEN, servo at "open" cam stop).
+#                   OFF = air blocked (hose PINCHED, servo at "closed" cam stop).
+# RESTORE_DEFAULT_ON => fail-to-air-on at boot so the pump is never dead-headed.
+# CALIBRATION TODO: the -100% / 100% levels below are placeholders — set them to the real
+# open / pinched cam end positions on the bench before relying on these (see plan verify step).
+switch:
+   - platform: template
+     name: "Feed Air"
+     id: feed_air_irrigation_tent
+     icon: mdi:weather-windy
+     optimistic: true
+     restore_mode: RESTORE_DEFAULT_ON
+     turn_on_action:
+       - servo.write:
+           id: feed_air_servo
+           level: -100%
+     turn_off_action:
+       - servo.write:
+           id: feed_air_servo
+           level: 100%
+   - platform: template
+     name: "Flush Air"
+     id: flush_air_irrigation_tent
+     icon: mdi:weather-windy
+     optimistic: true
+     restore_mode: RESTORE_DEFAULT_ON
+     turn_on_action:
+       - servo.write:
+           id: flush_air_servo
+           level: -100%
+     turn_off_action:
+       - servo.write:
+           id: flush_air_servo
+           level: 100%
