@@ -139,15 +139,19 @@ one_wire:
      pin: GPIO4
 
 sensor:
+   # DS18B20 update_interval lowered 60s (platform default) -> 10s (2026-07-01)
+   # so reservoir temp reacts quickly during fills/flushes.
    - platform: dallas_temp
      address: 0x5000000047758c28
      name: "Feed Temperature"
      id: feed_temperauture_irrigation_tent
+     update_interval: 10s
 
    - platform: dallas_temp
      address: 0x6f000000455cab28
      name: "Flush Temperature"
      id: flush_temperature_irrigation_tent
+     update_interval: 10s
 
    - platform: adc
      pin: GPIO34
