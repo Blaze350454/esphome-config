@@ -8,6 +8,18 @@ substitutions:
 esphome:
   name: tent-irrigation-controller
   friendly_name: Tent Irrigation Controller
+  # Publish authoritative CLOSED on every boot. The GPIO outputs come up LOW
+  # (valves physically shut), but the optimistic template valves can publish a
+  # stale "open" after a power-blip reboot (2026-07-06 incident: all five came
+  # back "open" in HA while physically closed, tripping the HA watchdog).
+  on_boot:
+    priority: -100
+    then:
+      - valve.close: flush_drain_valve_irrigation_tent
+      - valve.close: flush_valve_irrigation_tent
+      - valve.close: flush_fill_valve_irrigation_tent
+      - valve.close: feed_fill_irrigation_valve_tent
+      - valve.close: feed_valve_irrigation_tent
 
 esp32:
   board: esp32dev
@@ -139,6 +151,13 @@ one_wire:
      pin: GPIO4
 
 sensor:
+   # Reboot forensics (added 2026-07-06 after the power-blip incident): lets HA
+   # distinguish "ESP rebooted" from "network blip" after an outage.
+   - platform: uptime
+     name: "Uptime"
+     id: uptime_irrigation_tent
+     update_interval: 60s
+
    # DS18B20 update_interval lowered 60s (platform default) -> 10s (2026-07-01)
    # so reservoir temp reacts quickly during fills/flushes.
    - platform: dallas_temp
