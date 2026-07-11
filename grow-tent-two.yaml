@@ -6,8 +6,15 @@ esp32:
   board: esp32-c3-devkitm-1
 
 wifi:
-  ssid: !secret wifi_ssid
-  password: !secret wifi_password
+  # Grow-area AP (GT784WN bridge @ 192.168.2.250, 2026-07-10) preferred;
+  # main router kept as fallback - ESPHome falls back automatically if the AP is down.
+  networks:
+    - ssid: !secret wifi_ssid_grow
+      password: !secret wifi_password_grow
+      priority: 10
+    - ssid: !secret wifi_ssid
+      password: !secret wifi_password
+      priority: 0
   ap:
     ssid: "Grow-Tent-Two Fallback Hotspot"
     password: !secret grow_tent_two_ap_password
@@ -40,6 +47,11 @@ i2c:
   id: i2c_bus
 
 sensor:
+  # WiFi diagnostics (grow-area AP migration 2026-07-10)
+  - platform: wifi_signal
+    name: "WiFi Signal"
+    update_interval: 60s
+
   - platform: bme280_i2c
     id: bme280_canopy
     temperature:
@@ -437,3 +449,8 @@ sensor:
           send_every: 12
           send_first_at: 1
     accuracy_decimals: 2    
+################ WiFi info (grow-area AP migration 2026-07-10) ################
+text_sensor:
+  - platform: wifi_info
+    ssid:
+      name: "WiFi SSID"

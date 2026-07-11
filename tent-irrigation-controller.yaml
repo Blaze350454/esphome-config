@@ -41,8 +41,15 @@ ota:
     password: !secret tent_irrigation_ota_password
 
 wifi:
-  ssid: !secret wifi_ssid
-  password: !secret wifi_password
+  # Grow-area AP (GT784WN bridge @ 192.168.2.250, 2026-07-10) preferred;
+  # main router kept as fallback - ESPHome falls back automatically if the AP is down.
+  networks:
+    - ssid: !secret wifi_ssid_grow
+      password: !secret wifi_password_grow
+      priority: 10
+    - ssid: !secret wifi_ssid
+      password: !secret wifi_password
+      priority: 0
   ap:
     ssid: "Tent-Irrigation-Controller"
     password: !secret tent_irrigation_ap_password
@@ -151,6 +158,12 @@ one_wire:
      pin: GPIO4
 
 sensor:
+   # WiFi diagnostics (grow-area AP migration 2026-07-10): RSSI + which SSID
+   # the ESP associated to, to verify Brentons vs main-router fallback.
+   - platform: wifi_signal
+     name: "WiFi Signal"
+     update_interval: 60s
+
    # Reboot forensics (added 2026-07-06 after the power-blip incident): lets HA
    # distinguish "ESP rebooted" from "network blip" after an outage.
    - platform: uptime
@@ -421,3 +434,9 @@ switch:
        - servo.write:
            id: flush_air_servo
            level: 100%
+
+################ WiFi info (grow-area AP migration 2026-07-10) ################
+text_sensor:
+  - platform: wifi_info
+    ssid:
+      name: "WiFi SSID"
