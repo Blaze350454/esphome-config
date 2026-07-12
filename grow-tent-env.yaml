@@ -1,0 +1,112 @@
+# Grow-tent environment board (ESP32-WROOM-32D): SCD41 CO2 + 3x BME280.
+# Fresh board, first-flashed 2026-07-12. Eventual home for the tent air-quality suite.
+esphome:
+  name: grow-tent-env
+  friendly_name: Grow Tent Environment
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+logger:
+
+api:
+  encryption:
+    key: !secret grow_tent_env_api_key
+
+ota:
+  - platform: esphome
+    password: !secret grow_tent_env_ota_password
+
+wifi:
+  ssid: !secret wifi_ssid_grow
+  password: !secret wifi_password_grow
+  ap:
+    ssid: "Grow-Tent-Env Fallback"
+    password: !secret grow_tent_env_ap_password
+
+captive_portal:
+
+# ---- Two I2C buses ----
+# A BME280 has only two selectable addresses (0x76/0x77), so THREE of them cannot
+# share one bus. The WROOM-32D has two hardware I2C buses, so:
+#   Bus A (GPIO21/22): SCD41 0x62 + BME280 Canopy 0x76 + BME280 Mid 0x77
+#   Bus B (GPIO16/17): BME280 Flower 0x76   <- 3rd BME280, own bus to dodge the clash
+# Breakouts have onboard SDA/SCL pull-ups; bare sensors need 10k to 3.3V per line.
+# NOTE: keep each bus run SHORT — I2C hates long cable (see the 15ft discussion). If
+# the sensor cluster is far from the board, use a P82B715 extender or lower the bus
+# frequency (add e.g. `frequency: 50kHz` per bus) and use twisted/shielded cable.
+i2c:
+  - id: bus_a
+    sda: GPIO21
+    scl: GPIO22
+    scan: true
+  - id: bus_b
+    sda: GPIO16
+    scl: GPIO17
+    scan: true
+
+sensor:
+  - platform: wifi_signal
+    name: "WiFi Signal"
+    update_interval: 60s
+
+  # ---- SCD41 CO2 / temp / humidity (bus A, 0x62) ----
+  - platform: scd4x
+    i2c_id: bus_a
+    address: 0x62
+    update_interval: 30s
+    co2:
+      name: "Tent CO2"
+      id: tent_co2
+    temperature:
+      name: "SCD41 Temperature"
+    humidity:
+      name: "SCD41 Humidity"
+
+  # ---- BME280 Canopy (bus A, 0x76) ----
+  # NOTE: no per-unit offsets applied - RE-CALIBRATE each BME280 on the bench (the old
+  # grow-tent-two offsets were unit-specific; don't copy them onto different sensors).
+  - platform: bme280_i2c
+    i2c_id: bus_a
+    address: 0x76
+    update_interval: 30s
+    temperature:
+      name: "Canopy Temperature"
+      oversampling: 16x
+    pressure:
+      name: "Canopy Pressure"
+    humidity:
+      name: "Canopy Humidity"
+
+  # ---- BME280 Mid (bus A, 0x77) ----
+  - platform: bme280_i2c
+    i2c_id: bus_a
+    address: 0x77
+    update_interval: 30s
+    temperature:
+      name: "Mid Temperature"
+      oversampling: 16x
+    pressure:
+      name: "Mid Pressure"
+    humidity:
+      name: "Mid Humidity"
+
+  # ---- BME280 Flower (bus B, 0x76) ----
+  - platform: bme280_i2c
+    i2c_id: bus_b
+    address: 0x76
+    update_interval: 30s
+    temperature:
+      name: "Flower Temperature"
+      oversampling: 16x
+    pressure:
+      name: "Flower Pressure"
+    humidity:
+      name: "Flower Humidity"
+
+text_sensor:
+  - platform: wifi_info
+    ssid:
+      name: "WiFi SSID"
