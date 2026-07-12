@@ -390,15 +390,23 @@ valve:
 # position so it holds ZERO current/torque (the cam's mechanical over-center stop holds the
 # pinch). No max-on watchdog like the fluid valves — air pinch has no flood risk.
 servo:
+   # min_level/max_level 2.5%/12.5% = 500-2500us: DS3225 needs the full pulse range to reach
+   # rated 180deg travel (ESPHome default 600-2400us clips it short). transition_length 0s:
+   # the stepped 0.7s ramp made the fast DS3225 chase each micro-step -> audible/tactile
+   # stutter; instant target = one clean smooth swing. Both bench-verified on test-esp32
+   # 2026-07-12. Re-tune min/max_level only if -100%/100% over-travels the real cam stops.
    - id: feed_air_servo
      output: feed_air_servo_pwm
      auto_detach_time: 1.5s
-     transition_length: 0.7s
-     # min_level/max_level: add + tune pulse widths if -100%/100% over-travels the cam stops.
+     transition_length: 0s
+     min_level: 2.5%
+     max_level: 12.5%
    - id: flush_air_servo
      output: flush_air_servo_pwm
      auto_detach_time: 1.5s
-     transition_length: 0.7s
+     transition_length: 0s
+     min_level: 2.5%
+     max_level: 12.5%
 
 # Air-line control. ON  = air flowing (hose OPEN, servo at "open" cam stop).
 #                   OFF = air blocked (hose PINCHED, servo at "closed" cam stop).
