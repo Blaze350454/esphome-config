@@ -1,0 +1,62 @@
+# Bench-test board (spare ESP32 devkit, CP2102N) for prototyping against the real
+# tent-irrigation-controller — currently: DS3225 air-pinch servo endpoint/calibration
+# testing on a breadboard (GPIO33, mirrors the production feed_air servo block).
+# Not part of the tent install; safe to reflash/repurpose at will.
+esphome:
+  name: test-esp32
+  friendly_name: Test ESP32
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+logger:
+
+api:
+  encryption:
+    key: !secret test_esp32_api_key
+
+ota:
+  - platform: esphome
+    password: !secret test_esp32_ota_password
+
+wifi:
+  ssid: !secret wifi_ssid_grow
+  password: !secret wifi_password_grow
+  ap:
+    ssid: "Test-ESP32"
+    password: !secret test_esp32_ap_password
+
+captive_portal:
+
+# ---- Feed air-pinch servo bench test (mirrors tent-irrigation-controller.yaml) ----
+# Signal only on GPIO33 - 50Hz PWM via ledc, same as production.
+# Servo POWER must come from its own 6.0V buck rail, NOT the ESP32 5V pin -
+# tie buck GND / servo GND / ESP32 GND together on a common rail.
+output:
+   - platform: ledc
+     pin: GPIO33
+     frequency: 50 Hz
+     id: feed_air_servo_pwm
+
+servo:
+   - id: feed_air_servo
+     output: feed_air_servo_pwm
+     auto_detach_time: 1.5s
+     transition_length: 0.7s
+
+switch:
+   - platform: template
+     name: "Feed Air Test"
+     id: feed_air_test
+     icon: mdi:weather-windy
+     optimistic: true
+     turn_on_action:
+       - servo.write:
+           id: feed_air_servo
+           level: -100%
+     turn_off_action:
+       - servo.write:
+           id: feed_air_servo
+           level: 100%
