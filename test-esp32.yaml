@@ -53,13 +53,13 @@ servo:
    - id: feed_air_servo
      output: feed_air_servo_pwm
      auto_detach_time: 1.5s
-     transition_length: 0.7s
+     transition_length: 0s
      min_level: 2.5%
      max_level: 12.5%
    - id: flush_air_servo
      output: flush_air_servo_pwm
      auto_detach_time: 1.5s
-     transition_length: 0.7s
+     transition_length: 0s
      min_level: 2.5%
      max_level: 12.5%
 
