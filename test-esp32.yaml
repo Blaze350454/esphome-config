@@ -63,6 +63,30 @@ servo:
      min_level: 2.5%
      max_level: 12.5%
 
+# ---- SCD41 CO2 / temp / humidity (I2C, added 2026-07-12) ----
+# SCD41 is a native-3.3V I2C device -> wire DIRECTLY to the ESP32, NO level shifter.
+# (The SN74AHCT125N you have is a UNIdirectional 5V buffer - wrong for bidirectional
+# I2C - so it is NOT used here.) A SparkFun/GY-style breakout has onboard SDA/SCL
+# pull-ups; a bare sensor needs 10k pull-ups to 3.3V on both lines.
+#   SCD41 3.3V/VDD -> ESP32 3V3        SCD41 SDA -> GPIO21
+#   SCD41 GND      -> common GND       SCD41 SCL -> GPIO22
+i2c:
+  sda: GPIO21
+  scl: GPIO22
+  scan: true
+
+sensor:
+  - platform: scd4x
+    address: 0x62
+    update_interval: 15s
+    co2:
+      name: "Test CO2"
+      id: test_co2
+    temperature:
+      name: "Test SCD41 Temperature"
+    humidity:
+      name: "Test SCD41 Humidity"
+
 switch:
    - platform: template
      name: "Feed Air Test"
