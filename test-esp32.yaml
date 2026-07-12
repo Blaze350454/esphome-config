@@ -1,6 +1,6 @@
 # Bench-test board (spare ESP32 devkit, CP2102N) for prototyping against the real
 # tent-irrigation-controller — currently: DS3225 air-pinch servo endpoint/calibration
-# testing on a breadboard (GPIO33, mirrors the production feed_air servo block).
+# testing on a breadboard (GPIO33 + GPIO5, mirrors the production air servo blocks).
 # Not part of the tent install; safe to reflash/repurpose at will.
 esphome:
   name: test-esp32
@@ -30,21 +30,38 @@ wifi:
 
 captive_portal:
 
-# ---- Feed air-pinch servo bench test (mirrors tent-irrigation-controller.yaml) ----
-# Signal only on GPIO33 - 50Hz PWM via ledc, same as production.
-# Servo POWER must come from its own 6.0V buck rail, NOT the ESP32 5V pin -
-# tie buck GND / servo GND / ESP32 GND together on a common rail.
+# ---- Air-pinch servo bench test (mirrors tent-irrigation-controller.yaml) ----
+# Signal-only on GPIO33 (feed) + GPIO5 (flush), 50Hz PWM via ledc, same as production.
+# GPIO5 is a strapping pin - expect a brief harmless PWM blip at boot (same on the
+# real controller). Servo POWER comes from the 6.0V buck rail, NOT the ESP32 5V pin;
+# buck GND / servo GND / ESP32 GND tied on a common rail.
 output:
    - platform: ledc
      pin: GPIO33
      frequency: 50 Hz
      id: feed_air_servo_pwm
+   - platform: ledc
+     pin: GPIO5
+     frequency: 50 Hz
+     id: flush_air_servo_pwm
 
+# min_level/max_level widened from ESPHome defaults (3%/12% = 600-2400us) to
+# 2.5%/12.5% = 500-2500us - DS3225 needs the full range to reach rated travel.
+# CALIBRATION: use the position sliders below to find each servo's real mechanical
+# endpoints, then transfer the numbers to the production config.
 servo:
    - id: feed_air_servo
      output: feed_air_servo_pwm
      auto_detach_time: 1.5s
      transition_length: 0.7s
+     min_level: 2.5%
+     max_level: 12.5%
+   - id: flush_air_servo
+     output: flush_air_servo_pwm
+     auto_detach_time: 1.5s
+     transition_length: 0.7s
+     min_level: 2.5%
+     max_level: 12.5%
 
 switch:
    - platform: template
@@ -60,3 +77,61 @@ switch:
        - servo.write:
            id: feed_air_servo
            level: 100%
+   - platform: template
+     name: "Flush Air Test"
+     id: flush_air_test
+     icon: mdi:weather-windy
+     optimistic: true
+     turn_on_action:
+       - servo.write:
+           id: flush_air_servo
+           level: -100%
+     turn_off_action:
+       - servo.write:
+           id: flush_air_servo
+           level: 100%
+
+# Calibration sliders: creep to the exact mechanical endpoints (-100..100 = full
+# pulse range 500-2500us). Detach buttons let the servo go limp so you can also
+# move the horn by hand and feel where the stops are.
+number:
+   - platform: template
+     name: "Feed Servo Position"
+     id: feed_servo_position
+     min_value: -100
+     max_value: 100
+     step: 1
+     initial_value: 0
+     optimistic: true
+     mode: slider
+     icon: mdi:rotate-right
+     set_action:
+       - servo.write:
+           id: feed_air_servo
+           level: !lambda 'return x / 100.0;'
+   - platform: template
+     name: "Flush Servo Position"
+     id: flush_servo_position
+     min_value: -100
+     max_value: 100
+     step: 1
+     initial_value: 0
+     optimistic: true
+     mode: slider
+     icon: mdi:rotate-right
+     set_action:
+       - servo.write:
+           id: flush_air_servo
+           level: !lambda 'return x / 100.0;'
+
+button:
+   - platform: template
+     name: "Feed Servo Detach"
+     icon: mdi:power-plug-off
+     on_press:
+       - servo.detach: feed_air_servo
+   - platform: template
+     name: "Flush Servo Detach"
+     icon: mdi:power-plug-off
+     on_press:
+       - servo.detach: flush_air_servo
