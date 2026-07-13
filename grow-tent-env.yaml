@@ -1,5 +1,8 @@
-# Grow-tent environment board (ESP32-WROOM-32D): SCD41 CO2 + 3x BME280.
-# Fresh board, first-flashed 2026-07-12. Eventual home for the tent air-quality suite.
+# Grow-tent environment board (ESP32-WROOM-32D): SCD41 CO2 + 4x BME280.
+# Fresh board, first-flashed 2026-07-12. Tent air-quality suite.
+# 2026-07-13: swapped the 3 mislabeled BMP280s out for 4 genuine BME280s (chip 0x60,
+# temp + pressure + humidity). BME280 has only two addresses (0x76/0x77), so 4 of them
+# need BOTH I2C buses = two per bus, one strapped SDO->GND (0x76) and one SDO->3.3V (0x77).
 esphome:
   name: grow-tent-env
   friendly_name: Grow Tent Environment
@@ -29,14 +32,13 @@ wifi:
 captive_portal:
 
 # ---- Two I2C buses ----
-# A BME280 has only two selectable addresses (0x76/0x77), so THREE of them cannot
-# share one bus. The WROOM-32D has two hardware I2C buses, so:
-#   Bus A (GPIO21/22): SCD41 0x62 + BME280 Canopy 0x76 + BME280 Mid 0x77
-#   Bus B (GPIO16/17): BME280 Flower 0x76   <- 3rd BME280, own bus to dodge the clash
-# Breakouts have onboard SDA/SCL pull-ups; bare sensors need 10k to 3.3V per line.
-# NOTE: keep each bus run SHORT — I2C hates long cable (see the 15ft discussion). If
-# the sensor cluster is far from the board, use a P82B715 extender or lower the bus
-# frequency (add e.g. `frequency: 50kHz` per bus) and use twisted/shielded cable.
+# BME280 = only two addresses (0x76/0x77), so four of them can't share one bus.
+# The WROOM-32D has two hardware I2C buses:
+#   Bus A (GPIO21/22): SCD41 0x62 + BME280 Lights 0x76 + BME280 Controller 0x77
+#   Bus B (GPIO16/17): BME280 Top Canopy 0x76 + BME280 Mid Canopy 0x77
+# Each bus: one module SDO->GND (0x76), one SDO->3.3V (0x77). Strap SDO SOLIDLY - a
+# floating/loose SDO leaves the module at an undefined address and it won't answer.
+# Breakouts have onboard SDA/SCL pull-ups; keep each bus run SHORT (I2C hates long cable).
 i2c:
   - id: bus_a
     sda: GPIO21
@@ -58,53 +60,66 @@ sensor:
     address: 0x62
     update_interval: 30s
     co2:
-      name: "Tent CO2"
+      name: "CO2"
       id: tent_co2
     temperature:
-      name: "SCD41 Temperature"
+      name: "CO2 Temperature"
     humidity:
-      name: "SCD41 Humidity"
+      name: "CO2 Humidity"
 
-  # ---- BME280 Canopy (bus A, 0x76) ----
-  # NOTE: no per-unit offsets applied - RE-CALIBRATE each BME280 on the bench (the old
-  # grow-tent-two offsets were unit-specific; don't copy them onto different sensors).
+  # ---- BME280 Lights (bus A, 0x76 -> SDO to GND) ----
+  # NOTE: no per-unit offsets yet - RE-CALIBRATE on the bench. One unit reads high; add an
+  # `offset:` under temperature/humidity here once we know which slot it lands in.
   - platform: bme280_i2c
     i2c_id: bus_a
     address: 0x76
     update_interval: 30s
     temperature:
-      name: "Canopy Temperature"
+      name: "Lights Temperature"
       oversampling: 16x
     pressure:
-      name: "Canopy Pressure"
+      name: "Lights Pressure"
     humidity:
-      name: "Canopy Humidity"
+      name: "Lights Humidity"
 
-  # ---- BME280 Mid (bus A, 0x77) ----
+  # ---- BME280 Controller (bus A, 0x77 -> SDO to 3.3V) ----
   - platform: bme280_i2c
     i2c_id: bus_a
     address: 0x77
     update_interval: 30s
     temperature:
-      name: "Mid Temperature"
+      name: "Controller Temperature"
       oversampling: 16x
     pressure:
-      name: "Mid Pressure"
+      name: "Controller Pressure"
     humidity:
-      name: "Mid Humidity"
+      name: "Controller Humidity"
 
-  # ---- BME280 Flower (bus B, 0x76) ----
+  # ---- BME280 Top Canopy (bus B, 0x76 -> SDO to GND) ----
   - platform: bme280_i2c
     i2c_id: bus_b
     address: 0x76
     update_interval: 30s
     temperature:
-      name: "Flower Temperature"
+      name: "Top Canopy Temperature"
       oversampling: 16x
     pressure:
-      name: "Flower Pressure"
+      name: "Top Canopy Pressure"
     humidity:
-      name: "Flower Humidity"
+      name: "Top Canopy Humidity"
+
+  # ---- BME280 Mid Canopy (bus B, 0x77 -> SDO to 3.3V) ----
+  - platform: bme280_i2c
+    i2c_id: bus_b
+    address: 0x77
+    update_interval: 30s
+    temperature:
+      name: "Mid Canopy Temperature"
+      oversampling: 16x
+    pressure:
+      name: "Mid Canopy Pressure"
+    humidity:
+      name: "Mid Canopy Humidity"
 
 text_sensor:
   - platform: wifi_info

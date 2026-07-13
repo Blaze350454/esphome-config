@@ -59,72 +59,8 @@ sensor:
     name: "WiFi Signal"
     update_interval: 60s
 
-  # CO2 Sensor (existing)
-  - platform: adc
-    pin: GPIO3
-    name: "Raw ADC Reading"
-    update_interval: 5s
-    attenuation: 12db
-    id: raw_adc
-
-  - platform: template
-    name: "Corrected CO2 Voltage"
-    unit_of_measurement: "V"
-    update_interval: 5s
-    lambda: |-
-      float raw_value = id(raw_adc).state;
-      float correction_factor = 1.4 / 0.00113;
-      return (raw_value / 4095.0) * 3.3 * correction_factor;
-    id: corrected_voltage
-
-  - platform: template
-    name: "CO2 Concentration"
-    unit_of_measurement: "ppm"
-    icon: "mdi:molecule-co2"
-    update_interval: 10s
-    lambda: |-
-      const float V_REF = 3.3;
-      const float EMF_ZERO = 0.220;
-      const float EMF_SPAN = 0.030;
-
-      static std::array<float, 10> readings = {0};
-      static size_t reading_index = 0;
-
-      float v_out = id(corrected_voltage).state;
-
-      ESP_LOGD("CO2_SENSOR", "Raw voltage: %.5f V", v_out);
-
-      if (v_out >= 0.1 && v_out <= V_REF) {
-        float emf = V_REF - v_out;
-
-        ESP_LOGD("CO2_SENSOR", "Calculated EMF: %.5f V", emf);
-
-        float ppm;
-        if (emf >= EMF_ZERO) {
-          ppm = 400.0;
-        } else {
-          ppm = 400.0 * pow(10, (EMF_ZERO - emf) / EMF_SPAN);
-        }
-
-        ESP_LOGD("CO2_SENSOR", "Calculated PPM: %.2f", ppm);
-
-        readings[reading_index] = ppm;
-        reading_index = (reading_index + 1) % 10;
-      } else {
-        ESP_LOGW("CO2_SENSOR", "Voltage out of range: %.5f V", v_out);
-      }
-
-      std::array<float, 10> sorted_readings = readings;
-      std::sort(sorted_readings.begin(), sorted_readings.end());
-
-      float sum = 0;
-      for (size_t i = 2; i < 8; i++) {
-        sum += sorted_readings[i];
-      }
-      float average = sum / 6;
-
-      ESP_LOGD("CO2_SENSOR", "Final average PPM: %.2f", average);
-      return average;
+  # NOTE 2026-07-13: analog MG-811 CO2 sensor (GPIO3 ADC + Raw ADC / Corrected CO2 Voltage /
+  # CO2 Concentration lambda) REMOVED - retired in favour of the SCD41 on grow-tent-env. GPIO3 now free.
 
   # Humidifier fan tach / RPM (Noctua green wire, 2 pulses per revolution)
   - platform: pulse_counter
