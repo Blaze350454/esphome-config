@@ -1,0 +1,136 @@
+esphome:
+  name: "grow-tower"
+  friendly_name: Grow Tower
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: !secret grow_tower_api_key
+
+ota:
+  - platform: esphome
+    password: !secret grow_tower_ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Grow-Tower Fallback Hotspot"
+    password: !secret grow_tower_ap_password
+
+captive_portal:
+
+################ Diagnostics ################
+sensor:
+  - platform: wifi_signal
+    name: "WiFi Signal"
+    update_interval: 60s
+
+  - platform: uptime
+    name: "Uptime"
+    update_interval: 60s
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: "IP Address"
+    ssid:
+      name: "Connected SSID"
+    mac_address:
+      name: "MAC Address"
+
+  - platform: version
+    name: "ESPHome Version"
+
+binary_sensor:
+
+  - platform: gpio
+    pin:
+      number: GPIO34
+      inverted: True
+    name: "Water Level"
+    device_class: moisture
+    filters:
+      - delayed_on: 1s
+      - delayed_off: 1s
+
+light:
+  - platform: rgb
+    id: grow_tower_led
+    name: "LED"
+    red: pwm_red
+    green: pwm_green
+    blue: pwm_blue
+    gamma_correct: 2.2  # Adjust for brightness balance
+    effects:
+      - lambda:
+          name: "Pulse 30%-100%"
+          update_interval: 300ms  # Slower update to reduce ESP32 workload
+          lambda: |-
+            static float brightness = 0.15; // Start at 30%
+            static bool increasing = true;
+
+            if (increasing) {
+              brightness += 0.0412; // Increase over ~5 seconds
+              if (brightness >= 1.0) {
+                brightness = 1.0;
+                increasing = false;
+              }
+            } else {
+              brightness -= 0.0412; // Decrease over ~5 seconds
+              if (brightness <= 0.15) {
+                brightness = 0.15;
+                increasing = true;
+              }
+            }
+
+            auto call = id(grow_tower_led).turn_on();
+            call.set_brightness(brightness);
+            call.perform();
+
+      - pulse:
+          name: "Slow Pulse"
+          transition_length: 3s  # Slow transition
+          update_interval: 3s    # Smooth cycle
+
+      - pulse:
+          name: "Fast Pulse"
+          transition_length: 0.5s  # Faster transition
+          update_interval: 0.5s    # Rapid cycle
+
+output:
+  - platform: ledc
+    id: pwm_red
+    pin: GPIO25
+    frequency: 1000Hz
+  - platform: ledc
+    id: pwm_green
+    pin: GPIO26
+    frequency: 1000Hz
+  - platform: ledc
+    id: pwm_blue
+    pin: GPIO27
+    frequency: 1000Hz
+
+switch:
+  - platform: gpio
+    name: "Water Pump"
+    pin:
+      number: GPIO23
+      mode: OUTPUT
+      inverted: false
+    id: relay_switch
+    # Safety: Ensure relay starts in OFF state when powered on
+    restore_mode: ALWAYS_OFF
+    # Optional: Add interlock if using multiple relays
+    # interlock: [relay_switch2, relay_switch3]
