@@ -26,13 +26,24 @@ ota:
 
 wifi:
   # Grow-area AP (GT784WN bridge @ 192.168.2.250) preferred; main router fallback.
+  # Static IP set in-firmware because the router refuses DHCP reservations.
   networks:
     - ssid: !secret wifi_ssid_grow
       password: !secret wifi_password_grow
       priority: 10
+      manual_ip:
+        static_ip: 192.168.2.236
+        gateway: 192.168.2.1
+        subnet: 255.255.255.0
+        dns1: 192.168.2.1
     - ssid: !secret wifi_ssid
       password: !secret wifi_password
       priority: 0
+      manual_ip:
+        static_ip: 192.168.2.236
+        gateway: 192.168.2.1
+        subnet: 255.255.255.0
+        dns1: 192.168.2.1
   ap:
     ssid: "Grow-Tent-Climate AP"
     password: !secret grow_tent_climate_ap_password
