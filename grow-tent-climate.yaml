@@ -1,0 +1,124 @@
+# Grow-tent air quality board (ESP32-WROOM-32, 30-pin devkit — flashed 2026-07-16, COM6/CP210x).
+# 30-pin note: no GPIO16/17 on this board, fine here — the mux design only needs GPIO21/22.
+# SCD41 CO2 + 4x SHT41 (temp/RH) behind a single TCA9548A I2C mux.
+# All 4 SHT41 share address 0x44, so each gets its own mux channel for isolation
+# (a shorted/dead sensor only takes out its channel, not the whole bus). SCD41 (0x62)
+# doesn't address-clash with the SHT41s but shares the mux anyway for the same reason.
+# TCA9548A address strap: A0/A1/A2 all to GND -> 0x70 (default, matches this config).
+esphome:
+  name: grow-tent-climate
+  friendly_name: Grow Tent Climate
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+logger:
+
+api:
+  encryption:
+    key: !secret grow_tent_climate_api_key
+
+ota:
+  - platform: esphome
+    password: !secret grow_tent_climate_ota_password
+
+wifi:
+  # Grow-area AP (GT784WN bridge @ 192.168.2.250) preferred; main router fallback.
+  networks:
+    - ssid: !secret wifi_ssid_grow
+      password: !secret wifi_password_grow
+      priority: 10
+    - ssid: !secret wifi_ssid
+      password: !secret wifi_password
+      priority: 0
+  ap:
+    ssid: "Grow-Tent-Climate AP"
+    password: !secret grow_tent_climate_ap_password
+
+captive_portal:
+
+# ---- I2C: one physical bus -> TCA9548A mux -> one sensor per channel ----
+i2c:
+  - id: bus_main
+    sda: GPIO21
+    scl: GPIO22
+    frequency: 50kHz
+    scan: true
+
+tca9548a:
+  - address: 0x70
+    id: mux
+    i2c_id: bus_main
+    channels:
+      - bus_id: mux_lights
+        channel: 0
+      - bus_id: mux_flower
+        channel: 1
+      - bus_id: mux_stem
+        channel: 2
+      - bus_id: mux_controller
+        channel: 3
+      - bus_id: mux_co2
+        channel: 4
+
+sensor:
+  - platform: wifi_signal
+    name: "WiFi Signal"
+    update_interval: 60s
+
+  # ---- SHT41 x4 (temp + RH at 4 positions), each isolated on its own mux channel ----
+  - platform: sht4x
+    i2c_id: mux_lights
+    address: 0x44
+    update_interval: 30s
+    temperature:
+      name: "Lights Temperature"
+    humidity:
+      name: "Lights Humidity"
+
+  - platform: sht4x
+    i2c_id: mux_flower
+    address: 0x44
+    update_interval: 30s
+    temperature:
+      name: "Flower Temperature"
+    humidity:
+      name: "Flower Humidity"
+
+  - platform: sht4x
+    i2c_id: mux_stem
+    address: 0x44
+    update_interval: 30s
+    temperature:
+      name: "Stem Temperature"
+    humidity:
+      name: "Stem Humidity"
+
+  - platform: sht4x
+    i2c_id: mux_controller
+    address: 0x44
+    update_interval: 30s
+    temperature:
+      name: "Controller Temperature"
+    humidity:
+      name: "Controller Humidity"
+
+  # ---- SCD41 CO2 / temp / humidity, own mux channel (0x62) ----
+  - platform: scd4x
+    i2c_id: mux_co2
+    address: 0x62
+    update_interval: 30s
+    co2:
+      name: "Tent CO2"
+      id: tent_climate_co2
+    temperature:
+      name: "Tent CO2 Temperature"
+    humidity:
+      name: "Tent CO2 Humidity"
+
+text_sensor:
+  - platform: wifi_info
+    ssid:
+      name: "WiFi SSID"
