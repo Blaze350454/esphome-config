@@ -191,13 +191,22 @@ sensor:
      id: pressure_pre_regulator_irrigation_tent
      attenuation: 12db
      update_interval: 2s
+     # Filter rework 2026-07-17 (pre-reg transducer post-mortem): average the RAW
+     # voltage first, then convert — identical math, but the dead-sensor floor
+     # check sees a settled voltage. Below 0.20 V the transducer is electrically
+     # absent (disconnected / failed / unpowered — a healthy one outputs 0.333 V
+     # at 0 psi), so publish NAN and HA shows unknown instead of a fake 0.0 psi.
+     # send_every 5 -> 1: a feed is only ~60 s of pumping and 10 s publishes
+     # averaged the peaks away; 2 s publishes capture them (drop back to 5 after
+     # commissioning if recorder volume becomes a bother).
      filters:
-       - lambda: |-
-           float psi = (x - 0.333f) / (3.0f - 0.333f) * 30.0f;
-           return psi < 0.0f ? 0.0f : psi;
        - sliding_window_moving_average:
            window_size: 5
-           send_every: 5
+           send_every: 1
+       - lambda: |-
+           if (x < 0.20f) return NAN;
+           float psi = (x - 0.333f) / (3.0f - 0.333f) * 30.0f;
+           return psi < 0.0f ? 0.0f : psi;
      unit_of_measurement: "psi"
      device_class: pressure
      state_class: measurement
@@ -209,13 +218,16 @@ sensor:
      id: pressure_post_regulator_irrigation_tent
      attenuation: 12db
      update_interval: 2s
+     # Same 2026-07-17 filter rework as Pressure Pre-Regulator above
+     # (dead-transducer NAN floor + 2 s publishes).
      filters:
-       - lambda: |-
-           float psi = (x - 0.333f) / (3.0f - 0.333f) * 30.0f;
-           return psi < 0.0f ? 0.0f : psi;
        - sliding_window_moving_average:
            window_size: 5
-           send_every: 5
+           send_every: 1
+       - lambda: |-
+           if (x < 0.20f) return NAN;
+           float psi = (x - 0.333f) / (3.0f - 0.333f) * 30.0f;
+           return psi < 0.0f ? 0.0f : psi;
      unit_of_measurement: "psi"
      device_class: pressure
      state_class: measurement
