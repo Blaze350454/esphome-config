@@ -118,9 +118,23 @@ sensor:
 
   # ---- SCD41 CO2 / temp / humidity, own mux channel (0x62) ----
   - platform: scd4x
+    id: scd41_hub
     i2c_id: mux_co2
     address: 0x62
     update_interval: 30s
+    # ASC = Automatic Self-Calibration. The sensor tracks the LOWEST CO2 it has seen over a
+    # rolling ~7-day window and re-zeros itself so that minimum reads ~400ppm.
+    # TRUE is correct while the tent is VENTED AND UNDOSED (current commissioning phase) --
+    # exhaust pulls in outside air, so the "I saw fresh air this week" assumption holds.
+    # SET FALSE THE DAY CO2 DOSING STARTS. In a sealed enriched tent the sensor never sees
+    # fresh air, so ASC re-baselines against the enriched minimum and walks the calibration
+    # DOWN -- the sensor under-reports, the automation doses more, and it runs away upward.
+    # Not runtime-toggleable in ESPHome; changing it is a one-line reflash.
+    automatic_self_calibration: true
+    # No pressure sensor on this board (cancelled by design), so compensate statically by
+    # altitude instead -- NDIR ppm is density-dependent, worth ~1-2% accuracy.
+    # TODO: set to your actual elevation in metres, then reflash.
+    # altitude_compensation: 0m
     co2:
       name: "Tent CO2"
       id: tent_climate_co2
@@ -128,6 +142,61 @@ sensor:
       name: "Tent CO2 Temperature"
     humidity:
       name: "Tent CO2 Humidity"
+
+number:
+  # Reference concentration the Force Recalibration button calibrates TO.
+  # Outdoor ambient is ~425ppm and climbs ~2.5ppm/yr, so nudge this up over time;
+  # set it to the cylinder value instead if a calibration gas is ever used.
+  - platform: template
+    name: "CO2 Calibration Reference"
+    id: co2_cal_reference
+    optimistic: true
+    restore_value: true
+    initial_value: 425
+    min_value: 350
+    max_value: 2000
+    step: 1
+    unit_of_measurement: ppm
+    icon: mdi:target
+    entity_category: config
+    mode: box
+
+button:
+  # FRC (Forced ReCalibration) tells the SCD41 "the air you are in RIGHT NOW is exactly
+  # <reference> ppm" and rewrites its baseline to match. It is a one-tap footgun:
+  # pressing it inside an occupied or enriched tent bakes in a permanent error.
+  #
+  # PROCEDURE: carry the sensor to genuinely fresh outdoor air, away from the house and
+  # away from your own breath, leave it powered and measuring there for AT LEAST 3 minutes
+  # (Sensirion's equilibration requirement), and only then press.
+  #
+  # The guard below refuses to fire when the live reading is >300ppm from the reference.
+  # That window is wide enough for any plausible sensor drift but narrow enough to catch
+  # the real mistake -- pressing while still sitting in tent air.
+  - platform: template
+    name: "CO2 Force Recalibration"
+    entity_category: config
+    icon: mdi:tune
+    on_press:
+      - if:
+          condition:
+            lambda: |-
+              const float ref = id(co2_cal_reference).state;
+              const float now = id(tent_climate_co2).state;
+              return !std::isnan(now) && fabsf(now - ref) <= 300.0f;
+          then:
+            - logger.log:
+                level: INFO
+                format: "FRC: recalibrating to %.0f ppm (sensor was reading %.0f ppm)"
+                args: ['id(co2_cal_reference).state', 'id(tent_climate_co2).state']
+            - scd4x.perform_forced_calibration:
+                value: !lambda 'return (int) id(co2_cal_reference).state;'
+                id: scd41_hub
+          else:
+            - logger.log:
+                level: WARN
+                format: "FRC ABORTED: %.0f ppm is not within 300 of reference %.0f ppm -- not fresh air, or no reading yet. Calibration left unchanged."
+                args: ['id(tent_climate_co2).state', 'id(co2_cal_reference).state']
 
 text_sensor:
   - platform: wifi_info
