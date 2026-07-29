@@ -123,14 +123,20 @@ sensor:
     address: 0x62
     update_interval: 30s
     # ASC = Automatic Self-Calibration. The sensor tracks the LOWEST CO2 it has seen over a
-    # rolling ~7-day window and re-zeros itself so that minimum reads ~400ppm.
-    # TRUE is correct while the tent is VENTED AND UNDOSED (current commissioning phase) --
-    # exhaust pulls in outside air, so the "I saw fresh air this week" assumption holds.
-    # SET FALSE THE DAY CO2 DOSING STARTS. In a sealed enriched tent the sensor never sees
-    # fresh air, so ASC re-baselines against the enriched minimum and walks the calibration
-    # DOWN -- the sensor under-reports, the automation doses more, and it runs away upward.
+    # rolling ~7-day window and re-zeros itself so that minimum reads ~400ppm. That is only
+    # valid if the sensor periodically breathes genuine ~420ppm OUTDOOR air.
+    # THIS TENT NEVER DOES: intake is the LIVING ROOM, exhaust goes outside. An occupied
+    # indoor space bottoms out at ~450-700ppm, so ASC would force that floor down to 400 and
+    # bake in a permanent 50-300ppm UNDER-read -- the dangerous direction, since a dosing
+    # automation would then overshoot chasing a target the sensor claims it hasn't hit.
+    # => FALSE, permanently. Baseline is maintained by manual FRC instead: the sensor goes
+    # outside in real fresh air at the start of every grow (before seedlings go in) and the
+    # guarded "CO2 Force Recalibration" button is pressed there. Drift without ASC is only
+    # tens of ppm/yr, so a per-grow FRC is comfortably more often than needed.
+    # ASC lives in the SENSOR's own EEPROM and fresh SCD41s ship with it ON, so this is
+    # flashed false BEFORE the replacement sensor is fitted -- it never runs a bad cycle.
     # Not runtime-toggleable in ESPHome; changing it is a one-line reflash.
-    automatic_self_calibration: true
+    automatic_self_calibration: false
     # No pressure sensor on this board (cancelled by design), so compensate statically by
     # altitude instead -- NDIR ppm is density-dependent, worth ~1-2% accuracy.
     # TODO: set to your actual elevation in metres, then reflash.
