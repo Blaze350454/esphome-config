@@ -63,7 +63,7 @@ tca9548a:
     id: mux
     i2c_id: bus_main
     channels:
-      - bus_id: mux_lights
+      - bus_id: mux_canopy
         channel: 0
       - bus_id: mux_flower
         channel: 1
@@ -80,14 +80,20 @@ sensor:
     update_interval: 60s
 
   # ---- SHT41 x4 (temp + RH at 4 positions), each isolated on its own mux channel ----
+  # ch0 Canopy / ch1 Flower / ch2 Stem = the three plant-zone heights; all three feed
+  # sensor.tent_average_temperature / _humidity in HA via area=tent auto-discovery.
+  # ch3 Controller measures the control-board enclosure, NOT tent air -- it is
+  # deliberately EXCLUDED from those averages (two bucks self-heat it, so it reads
+  # high) and instead drives the controller over-temp / over-humidity alerts.
+  # (ch0 was named "Lights" until 2026-07-29; renamed before mounting.)
   - platform: sht4x
-    i2c_id: mux_lights
+    i2c_id: mux_canopy
     address: 0x44
     update_interval: 30s
     temperature:
-      name: "Lights Temperature"
+      name: "Canopy Temperature"
     humidity:
-      name: "Lights Humidity"
+      name: "Canopy Humidity"
 
   - platform: sht4x
     i2c_id: mux_flower
