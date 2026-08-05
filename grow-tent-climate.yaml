@@ -86,14 +86,55 @@ sensor:
   # deliberately EXCLUDED from those averages (two bucks self-heat it, so it reads
   # high) and instead drives the controller over-temp / over-humidity alerts.
   # (ch0 was named "Lights" until 2026-07-29; renamed before mounting.)
+  #
+  # FILTERING (added 2026-08-05). These published raw, unrounded floats every
+  # 30 s -- 13 decimal places, 10 values, ~29k recorder rows/day from this board
+  # alone, and every single publish counted as a state CHANGE because no two
+  # raw samples are ever bit-identical. All outlier rejection was happening
+  # HA-side in the tent-average templates; the board itself did nothing.
+  #   round: 2 -> the filter that actually TRUNCATES THE PUBLISHED VALUE to
+  #     sensor-honest precision (SHT41 is +/-0.2 C / +/-1.8 %RH, so digits past
+  #     the 2nd are pure noise). Repeated rounded values then stop registering
+  #     as state CHANGES in HA, which is where most of the recorder saving
+  #     comes from.
+  #     DO NOT swap this for accuracy_decimals alone -- that only sets DISPLAY
+  #     precision (HA maps it to suggested_display_precision). The raw float
+  #     still crosses the API and still lands in the recorder full-width.
+  #     Verified the hard way 2026-08-05: a flash carrying accuracy_decimals
+  #     but no round filter left states reading 22.1890316009521.
+  #     Both are kept: round fixes the stored value, accuracy_decimals tells
+  #     HA and the logs how many digits are meaningful.
+  #   window 4 / send_every 2 -> still samples every 30 s, but publishes once a
+  #     minute as the mean of the last 4 samples (2 min of data). Kills
+  #     single-sample spikes at the source instead of relying on the HA median
+  #     band to catch them. Order matters: average FIRST, then round, so the
+  #     rounding applies to the smoothed value rather than to each sample.
+  #   send_first_at: 1 -> publish the very first sample after boot, so HA is not
+  #     blank for two minutes after every flash.
+  # Costs up to ~1 min of latency, which is nothing against tent air's thermal
+  # mass, the 30 C AC-boost threshold, and the 15-minute divergence hold.
   - platform: sht4x
     i2c_id: mux_canopy
     address: 0x44
     update_interval: 30s
     temperature:
       name: "Canopy Temperature"
+      accuracy_decimals: 2
+      filters:
+        - sliding_window_moving_average:
+            window_size: 4
+            send_every: 2
+            send_first_at: 1
+        - round: 2
     humidity:
       name: "Canopy Humidity"
+      accuracy_decimals: 2
+      filters:
+        - sliding_window_moving_average:
+            window_size: 4
+            send_every: 2
+            send_first_at: 1
+        - round: 2
 
   - platform: sht4x
     i2c_id: mux_flower
@@ -101,8 +142,22 @@ sensor:
     update_interval: 30s
     temperature:
       name: "Flower Temperature"
+      accuracy_decimals: 2
+      filters:
+        - sliding_window_moving_average:
+            window_size: 4
+            send_every: 2
+            send_first_at: 1
+        - round: 2
     humidity:
       name: "Flower Humidity"
+      accuracy_decimals: 2
+      filters:
+        - sliding_window_moving_average:
+            window_size: 4
+            send_every: 2
+            send_first_at: 1
+        - round: 2
 
   - platform: sht4x
     i2c_id: mux_stem
@@ -110,8 +165,22 @@ sensor:
     update_interval: 30s
     temperature:
       name: "Stem Temperature"
+      accuracy_decimals: 2
+      filters:
+        - sliding_window_moving_average:
+            window_size: 4
+            send_every: 2
+            send_first_at: 1
+        - round: 2
     humidity:
       name: "Stem Humidity"
+      accuracy_decimals: 2
+      filters:
+        - sliding_window_moving_average:
+            window_size: 4
+            send_every: 2
+            send_first_at: 1
+        - round: 2
 
   - platform: sht4x
     i2c_id: mux_controller
@@ -119,8 +188,22 @@ sensor:
     update_interval: 30s
     temperature:
       name: "Controller Temperature"
+      accuracy_decimals: 2
+      filters:
+        - sliding_window_moving_average:
+            window_size: 4
+            send_every: 2
+            send_first_at: 1
+        - round: 2
     humidity:
       name: "Controller Humidity"
+      accuracy_decimals: 2
+      filters:
+        - sliding_window_moving_average:
+            window_size: 4
+            send_every: 2
+            send_first_at: 1
+        - round: 2
 
   # ---- SCD41 CO2 / temp / humidity, own mux channel (0x62) ----
   - platform: scd4x
