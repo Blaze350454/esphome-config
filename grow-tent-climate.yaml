@@ -227,9 +227,16 @@ sensor:
     # Not runtime-toggleable in ESPHome; changing it is a one-line reflash.
     automatic_self_calibration: false
     # No pressure sensor on this board (cancelled by design), so compensate statically by
-    # altitude instead -- NDIR ppm is density-dependent, worth ~1-2% accuracy.
-    # TODO: set to your actual elevation in metres, then reflash.
-    # altitude_compensation: 0m
+    # altitude instead -- NDIR ppm is density-dependent.
+    # SITE ELEVATION = 30 m ASL (confirmed 2026-08-05). The old comment here guessed this
+    # was worth "~1-2% accuracy"; at 30 m it is not. 30 m is ~1009.7 hPa vs 1013.25 at sea
+    # level, a 0.36% pressure delta, so the correction is ~1.5 ppm at 420 ppm and ~5 ppm at
+    # 1500 ppm -- far inside the SCD41's own +/-(40 ppm + 5%) spec. Set it for correctness,
+    # but do NOT treat it as an accuracy lever; FRC in real outdoor air is what actually
+    # matters here.
+    # Left commented because the SCD41 is not fitted yet -- uncomment and reflash in the
+    # same pass that mounts the replacement sensor, so config never leads firmware.
+    # altitude_compensation: 30m
     co2:
       name: "Tent CO2"
       id: tent_climate_co2
