@@ -5,6 +5,8 @@
 # (a shorted/dead sensor only takes out its channel, not the whole bus). SCD41 (0x62)
 # doesn't address-clash with the SHT41s but shares the mux anyway for the same reason.
 # TCA9548A address strap: A0/A1/A2 all to GND -> 0x70 (default, matches this config).
+#
+# Board doc: Grow Home repo, grow_tent_automation/docs/grow_tent_climate_esphome.md
 esphome:
   name: grow-tent-climate
   friendly_name: Grow Tent Climate
