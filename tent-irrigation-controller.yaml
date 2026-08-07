@@ -47,9 +47,19 @@ wifi:
     - ssid: !secret wifi_ssid_grow
       password: !secret wifi_password_grow
       priority: 10
+      manual_ip:
+        static_ip: 192.168.2.240
+        gateway: 192.168.2.1
+        subnet: 255.255.255.0
+        dns1: 192.168.2.1
     - ssid: !secret wifi_ssid
       password: !secret wifi_password
       priority: 0
+      manual_ip:
+        static_ip: 192.168.2.240
+        gateway: 192.168.2.1
+        subnet: 255.255.255.0
+        dns1: 192.168.2.1
   ap:
     ssid: "Tent-Irrigation-Controller"
     password: !secret tent_irrigation_ap_password
