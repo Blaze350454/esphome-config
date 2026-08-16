@@ -29,6 +29,23 @@ substitutions:
   air_level_feed_air_blocked:  "88.9%"    # cam phi +80 -> FEED  hose pinched, air reaches FLUSH
   air_level_flush_air_blocked: "-88.9%"   # cam phi -80 -> FLUSH hose pinched, air reaches FEED
 
+  # --- Air diverter servo WIRING ---
+  # The pin lives here rather than only in the output: block below, because that block
+  # is 300 lines away and everything servo-related refers to this pin by its output ID
+  # (air_diverter_pwm) — so reading the servo: or select: sections never shows a pin.
+  #
+  #   DS3225 signal -> ${air_servo_pin} on the ESP32
+  #   DS3225 V+     -> XL4016 buck +6.0 V   (NEVER the ESP 5V/3V3 rail: stall is amps)
+  #   DS3225 GND    -> buck GND *AND* ESP32 GND
+  #
+  # ⚠ THE COMMON GROUND IS NOT OPTIONAL. PWM is a voltage referenced to ground, so with
+  # the servo on its own supply the buck's return must still be bonded to the ESP32's.
+  # Without it the servo sits dead or jitters at random, and it looks exactly like a bad
+  # pin or bad firmware. An older comment here said "only this signal wire lands on the
+  # ESP32", which read as one wire and was wrong; it is signal + a shared ground.
+  # Put the 2200uF across the buck output close to the servo to swallow cam inrush.
+  air_servo_pin: GPIO33
+
   # How often the current route is re-asserted onto the servo (see the interval: block).
   # Trade-off: each re-assert re-attaches the DS3225 for auto_detach_time (1.5s), so it
   # chirps and pulls buck current on that cadence. Raise it if the noise annoys, but do
@@ -357,12 +374,12 @@ output:
 
    # ---- Air diverter servo PWM (single-servo rebuild 2026-08-09) ----
    # 50 Hz signal pin for the ONE DS3225 that drives the single-cam air diverter.
-   # Servo POWER comes from a dedicated XL4016 buck @ 6.0V (NOT the ESP board);
-   # only this signal wire lands on the ESP32.
+   # FULL WIRING (signal + power + the mandatory common ground) is documented with
+   # the air_servo_pin substitution at the top of this file — read that before wiring.
    # GPIO5 carried the second servo in the retired 2-servo design and is now FREE.
    # It is a strapping pin, so pick it last if something else ever needs a pin here.
    - platform: ledc
-     pin: GPIO33
+     pin: ${air_servo_pin}
      frequency: 50 Hz
      id: air_diverter_pwm
 
@@ -477,6 +494,8 @@ servo:
    # 2026-07-12.
    # !! ASSEMBLY: mount the horn so level 0% (servo mid-travel, 90 deg) IS cam phi 0 =
    # both hoses open. The cam then needs +/-80 deg either side, well inside 180 deg travel.
+   # Signal pin is ${air_servo_pin} (via output air_diverter_pwm); wiring notes are with
+   # the air_servo_pin substitution at the top of this file.
    - id: air_diverter_servo
      output: air_diverter_pwm
      auto_detach_time: 1.5s
