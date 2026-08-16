@@ -128,6 +128,11 @@ binary_sensor:
      name: "Feed Empty"
      id: feed_empty_irrigation_tent
      device_class: moisture
+     # delayed_off raised to 30s (2026-06-20): air/stir agitation sloshes the
+     # floats, causing wet/dry/wet flutter. Only report dry after 30s sustained
+     # dry so a momentary splash-induced dry blip doesn't false-trigger.
+     # (Applies to every float below; recovered 2026-08-16 from the LXC copy,
+     # where it had been added via the dashboard and never pushed back.)
      filters:
        - delayed_on: 2s
        - delayed_off: 30s
