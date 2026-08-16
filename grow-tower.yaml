@@ -44,23 +44,29 @@ captive_portal:
 sensor:
   - platform: wifi_signal
     name: "WiFi Signal"
+    entity_category: diagnostic
     update_interval: 60s
 
   - platform: uptime
     name: "Uptime"
+    entity_category: diagnostic
     update_interval: 60s
 
 text_sensor:
   - platform: wifi_info
     ip_address:
       name: "IP Address"
+      entity_category: diagnostic
     ssid:
       name: "Connected SSID"
+      entity_category: diagnostic
     mac_address:
       name: "MAC Address"
+      entity_category: diagnostic
 
   - platform: version
     name: "ESPHome Version"
+    entity_category: diagnostic
 
 binary_sensor:
 
@@ -407,7 +413,7 @@ script:
             - script.execute:
                 id: led_set_color_from_text
                 color_text: !lambda |-
-                  std::string c = id(medium_alert_color).state;
+                  std::string c = id(medium_alert_color).current_option().str();
                   if (c == "Orange") return id(color_orange).state;
                   if (c == "Green") return id(color_green).state;
                   if (c == "Blue") return id(color_blue).state;
