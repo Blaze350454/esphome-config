@@ -5,6 +5,36 @@ substitutions:
                                       # genuine stuck-open / HA-hung event. Runs on the ESP, so it
                                       # protects even when HA is unreachable.
 
+  # --- Air diverter servo levels (single-cam rebuild 2026-08-09) ---
+  # ONE DS3225 + one symmetric cam serves BOTH pinch stations, so the three states
+  # are mutually exclusive by construction and BOTH-PINCHED is mechanically
+  # impossible — the air pump can never be dead-headed.
+  #
+  # Level <-> angle: min_level/max_level 2.5%/12.5% = 500-2500us = 0-180 deg, so
+  # level 0% is the servo's 90 deg mid-travel.  level% = (cam_phi / 90) * 100.
+  # cam phi 80 -> 88.9%.  phi 80 sits inside the cam's verified pinch DWELL, which
+  # is flat from phi 78 to phi 90, so servo positioning error anywhere in that band
+  # changes the hose gap by nothing. Same for the low dwell around phi 0.
+  #
+  # NAMING (2026-08-16): the states are named for WHICH HOSE IS PINCHED, not for where
+  # the air ends up. That kills the double negative that produced a real bug here: the
+  # old "Air to Feed" meant the FLUSH hose was pinched, so name and sign were inverted
+  # relative to each other and got swapped once already. Now the name and the cam spec
+  # read the same direction, so there is nothing left to invert.
+  #
+  # The signs come from the CAD, not a guess: the Fusion model names the -Y station FEED
+  # and the +Y station FLUSH ("Pivot Arm Feed " / "Pivot Arm Flush", "Hose Housing Bottom
+  # Feed" / "... Flush"), and the cam spec is "+80 deg = -Y pinched, -80 deg = +Y pinched".
+  air_level_both_open:         "0%"       # cam phi   0 -> both hoses open, air to both tanks
+  air_level_feed_air_blocked:  "88.9%"    # cam phi +80 -> FEED  hose pinched, air reaches FLUSH
+  air_level_flush_air_blocked: "-88.9%"   # cam phi -80 -> FLUSH hose pinched, air reaches FEED
+
+  # How often the current route is re-asserted onto the servo (see the interval: block).
+  # Trade-off: each re-assert re-attaches the DS3225 for auto_detach_time (1.5s), so it
+  # chirps and pulls buck current on that cadence. Raise it if the noise annoys, but do
+  # not remove it — it is what makes the published state self-healing.
+  air_reassert_interval: 5min
+
 esphome:
   name: tent-irrigation-controller
   friendly_name: Tent Irrigation Controller
@@ -20,6 +50,29 @@ esphome:
       - valve.close: flush_fill_valve_irrigation_tent
       - valve.close: feed_fill_irrigation_valve_tent
       - valve.close: feed_valve_irrigation_tent
+      # Air diverter to BOTH OPEN on every boot. Never leave a reservoir cut off
+      # after a reboot, and never come up with a line the pump has to work against.
+      #
+      # WHY priority -100 and not something earlier: this action needs BOTH the servo
+      # and the select components already set up, and -100 is the only on_boot priority
+      # that runs after App.setup() has initialised every component. Anything higher
+      # fires while air_diverter_servo is still unconfigured and the write is lost.
+      # The valve closes above have the same requirement, which is why they share it.
+      #
+      # WHY this line is load-bearing and NOT redundant with `initial_option` (verified
+      # against esphome 2026.7.4 source, not assumed): template select's setup path is
+      # setup_initial() -> publish_state(index) ONLY. It never calls control(), so
+      # set_action never runs and the servo never moves. Without this line the ESP boots
+      # PUBLISHING "Both Open" while the cam physically sits wherever it was left — the
+      # same optimistic-state lie that bit the valves on 2026-07-06.
+      #
+      # And select.set really does re-fire set_action even when the option is unchanged:
+      # SelectCall::perform() calls control(idx) with no equality check, and
+      # TemplateSelectWithSetAction::control() triggers set_trigger_ before publishing.
+      # That is also what makes the re-assert interval below work.
+      - select.set:
+          id: air_route_select
+          option: "Both Open"
 
 esp32:
   board: esp32dev
@@ -297,19 +350,16 @@ output:
        mode: OUTPUT
      id: feed_valve_irrigation_tent_output
 
-   # ---- Air-pinch servo PWM (added 2026-06-20) ----
-   # 50 Hz signal pins for the two DS3225 servos that drive the reservoir air-line pinch
-   # valves. Servo POWER comes from a dedicated XL4016 buck @ 6.0V (NOT the ESP board);
-   # only these signal wires land on the ESP32. GPIO5 is a strapping pin and emits a brief
-   # PWM blip at boot — harmless, the over-center cam holds the pinch position through it.
+   # ---- Air diverter servo PWM (single-servo rebuild 2026-08-09) ----
+   # 50 Hz signal pin for the ONE DS3225 that drives the single-cam air diverter.
+   # Servo POWER comes from a dedicated XL4016 buck @ 6.0V (NOT the ESP board);
+   # only this signal wire lands on the ESP32.
+   # GPIO5 carried the second servo in the retired 2-servo design and is now FREE.
+   # It is a strapping pin, so pick it last if something else ever needs a pin here.
    - platform: ledc
      pin: GPIO33
      frequency: 50 Hz
-     id: feed_air_servo_pwm
-   - platform: ledc
-     pin: GPIO5
-     frequency: 50 Hz
-     id: flush_air_servo_pwm
+     id: air_diverter_pwm
 
 # On-device per-valve max-on watchdogs. open_action starts the matching script (mode: restart,
 # so re-opening restarts the timer); close_action cancels it. If a valve stays open past
@@ -406,64 +456,162 @@ valve:
        - script.stop: watchdog_feed_valve
      optimistic: true
 
-# ---- Reservoir air-line pinch servos (added 2026-06-20) ----
-# Two DS3225 servos drive over-center cam pinch valves on the 1/2" air lines feeding the
-# feed and flush reservoirs. auto_detach_time makes the servo go limp ~1.5s after reaching
-# position so it holds ZERO current/torque (the cam's mechanical over-center stop holds the
-# pinch). No max-on watchdog like the fluid valves — air pinch has no flood risk.
+# ---- Reservoir air-line diverter servo (single-servo rebuild 2026-08-09) ----
+# ONE DS3225 drives a single symmetric cam serving BOTH pinch stations on the 1/2"
+# air lines. Supersedes the staged 2-servo block (feed_air_servo / flush_air_servo),
+# which was written for a design that has since been retired.
+# auto_detach_time lets the servo go limp ~1.5s after arriving: BOTH the open and the
+# pinched positions sit on TRUE-ARC cam dwells, where the hose reaction passes through
+# the cam axis and exerts no back-driving moment — so holding either state costs zero
+# current and zero torque. No max-on watchdog like the fluid valves: air has no flood risk.
 servo:
    # min_level/max_level 2.5%/12.5% = 500-2500us: DS3225 needs the full pulse range to reach
    # rated 180deg travel (ESPHome default 600-2400us clips it short). transition_length 0s:
    # the stepped 0.7s ramp made the fast DS3225 chase each micro-step -> audible/tactile
    # stutter; instant target = one clean smooth swing. Both bench-verified on test-esp32
-   # 2026-07-12. Re-tune min/max_level only if -100%/100% over-travels the real cam stops.
-   - id: feed_air_servo
-     output: feed_air_servo_pwm
-     auto_detach_time: 1.5s
-     transition_length: 0s
-     min_level: 2.5%
-     max_level: 12.5%
-   - id: flush_air_servo
-     output: flush_air_servo_pwm
+   # 2026-07-12.
+   # !! ASSEMBLY: mount the horn so level 0% (servo mid-travel, 90 deg) IS cam phi 0 =
+   # both hoses open. The cam then needs +/-80 deg either side, well inside 180 deg travel.
+   - id: air_diverter_servo
+     output: air_diverter_pwm
      auto_detach_time: 1.5s
      transition_length: 0s
      min_level: 2.5%
      max_level: 12.5%
 
-# Air-line control. ON  = air flowing (hose OPEN, servo at "open" cam stop).
-#                   OFF = air blocked (hose PINCHED, servo at "closed" cam stop).
-# RESTORE_DEFAULT_ON => fail-to-air-on at boot so the pump is never dead-headed.
-# CALIBRATION TODO: the -100% / 100% levels below are placeholders — set them to the real
-# open / pinched cam end positions on the bench before relying on these (see plan verify step).
+# Air routing. The single cam gives EXACTLY three states and they are mutually exclusive
+# by construction — "both pinched" does not exist as a position, so the pump can never be
+# dead-headed no matter what HA asks for. That is why this is one select and not two
+# switches: two switches would advertise four states, one of which the mechanism cannot do.
+#
+# Options are named for WHICH HOSE IS PINCHED. "Feed Air Blocked" = the feed reservoir
+# is cut off, so all the air goes to flush. Read them as the fault/limitation they are,
+# not as a destination — that is the whole point of the rename (see substitutions).
+#
+# ⚠ HA MAPPING IS CROSSED. input_select.air_route uses DESTINATION names (none/feed/flush)
+# while this select uses BLOCKED names, so they are NOT a 1:1 passthrough:
+#     air_route "none"  -> "Both Open"
+#     air_route "feed"  -> "Flush Air Blocked"   (air to feed  = flush hose pinched)
+#     air_route "flush" -> "Feed Air Blocked"    (air to flush = feed  hose pinched)
+# The HA side is still in DUMMY-SERVO mode: flip input_boolean.air_real_servos on and fill
+# in the marked TODO in script.tent_air_burst (packages/tent/irrigation/air.yaml:103) with
+# that mapping. Getting it backwards aerates the wrong tank silently.
+#
+# Boot and idle = Both Open, so a reservoir is never silently starved of air.
+select:
+   - platform: template
+     name: "Air Route"
+     id: air_route_select
+     icon: mdi:valve
+     optimistic: true
+     restore_value: false
+     initial_option: "Both Open"
+     options:
+       - "Both Open"
+       - "Feed Air Blocked"
+       - "Flush Air Blocked"
+     # `x` is a StringRef on esphome 2026.7.4 (set_trigger_ is Trigger<StringRef>), not a
+     # std::string. Comparing it to a string literal is fine — StringRef defines
+     # operator==(const StringRef&, const char*) — but do not assume std::string methods.
+     set_action:
+       - if:
+           condition:
+             lambda: 'return x == "Feed Air Blocked";'
+           then:
+             - servo.write:
+                 id: air_diverter_servo
+                 level: ${air_level_feed_air_blocked}
+       - if:
+           condition:
+             lambda: 'return x == "Flush Air Blocked";'
+           then:
+             - servo.write:
+                 id: air_diverter_servo
+                 level: ${air_level_flush_air_blocked}
+       - if:
+           condition:
+             lambda: 'return x == "Both Open";'
+           then:
+             - servo.write:
+                 id: air_diverter_servo
+                 level: ${air_level_both_open}
+
+# ---- Re-assert the commanded route (added 2026-08-16) ----
+# The servo runs off its own XL4016 buck, independent of the ESP supply, and auto_detach
+# leaves it limp between moves. So a brown-out on the 6V rail can drop or shift the cam
+# with the ESP none the wiser: the select would go on publishing a position the hardware
+# is no longer holding. Nothing on this valve gives position feedback, so the only
+# available defence is to periodically re-command what we believe to be true.
+#
+# Re-issuing the SAME option really does re-fire set_action — verified in 2026.7.4:
+# SelectCall::perform() calls control(idx) with no equality short-circuit, and
+# TemplateSelectWithSetAction::control() triggers set_trigger_ before publishing. So this
+# is a genuine servo write, not a no-op.
+#
+# ⚠ current_option() is the accessor to use. Select has NO public `.state` member on
+# 2026.7.4 — `id(air_route_select).state` is a COMPILE error, and `esphome config` will
+# not catch it because validation never compiles lambdas. It always has a value here
+# (initial_option publishes at component setup), so no has_state() guard is needed.
+interval:
+   - interval: ${air_reassert_interval}
+     then:
+       - if:
+           condition:
+             switch.is_off: air_servo_calibrate
+           then:
+             - select.set:
+                 id: air_route_select
+                 option: !lambda 'return id(air_route_select).current_option().str();'
+
+# ---- Bench calibration aids (added 2026-08-16, for first wiring and assembly) ----
+# Used once to index the servo horn: the cam must sit at phi 0 (both hoses open) when the
+# servo is at level 0%. Procedure: turn Calibrate ON, drive "Air Servo Level" to 0, press
+# "Air Servo Detach", reseat the horn on the spline tooth that lands the cam on its low
+# dwell, then sweep to +-88.9% and confirm each pinch is full and the other hose is clear.
+# Turn Calibrate OFF when done. entity_category: config keeps all three off the tent
+# dashboard, which is built from the un-categorised entities.
 switch:
+   # Suspends the re-assert interval so it cannot yank the cam back mid-calibration.
+   # ALWAYS_OFF: a reboot must never leave the valve with its self-healing switched off.
    - platform: template
-     name: "Feed Air"
-     id: feed_air_irrigation_tent
-     icon: mdi:weather-windy
+     name: "Air Servo Calibrate"
+     id: air_servo_calibrate
+     icon: mdi:tune
+     entity_category: config
      optimistic: true
-     restore_mode: RESTORE_DEFAULT_ON
-     turn_on_action:
-       - servo.write:
-           id: feed_air_servo
-           level: -100%
-     turn_off_action:
-       - servo.write:
-           id: feed_air_servo
-           level: 100%
+     restore_mode: ALWAYS_OFF
+
+button:
    - platform: template
-     name: "Flush Air"
-     id: flush_air_irrigation_tent
-     icon: mdi:weather-windy
+     name: "Air Servo Detach"
+     id: air_servo_detach
+     icon: mdi:link-off
+     entity_category: config
+     on_press:
+       - servo.detach: air_diverter_servo
+
+number:
+   # Writes the servo directly, bypassing the select. The select's published state is then
+   # stale until the next route command or re-assert corrects it — expected for a
+   # calibration tool, and precisely why the Calibrate switch exists.
+   # Resolution: cam phi = level% * 0.9, so step 0.1% = 0.09 deg of cam — far finer than
+   # one tooth of the DS3225's 25T spline (14.4 deg), which is the real indexing quantum.
+   - platform: template
+     name: "Air Servo Level"
+     id: air_servo_level
+     icon: mdi:angle-acute
+     entity_category: config
+     unit_of_measurement: "%"
      optimistic: true
-     restore_mode: RESTORE_DEFAULT_ON
-     turn_on_action:
+     restore_value: false
+     initial_value: 0
+     min_value: -100
+     max_value: 100
+     step: 0.1
+     set_action:
        - servo.write:
-           id: flush_air_servo
-           level: -100%
-     turn_off_action:
-       - servo.write:
-           id: flush_air_servo
-           level: 100%
+           id: air_diverter_servo
+           level: !lambda 'return x / 100.0f;'
 
 ################ WiFi info (grow-area AP migration 2026-07-10) ################
 text_sensor:
