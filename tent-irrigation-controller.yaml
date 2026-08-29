@@ -137,13 +137,6 @@ wifi:
 captive_portal:
 
 binary_sensor:
-   # ============================================================================
-   # ⚠ TEMPORARY — XKC PIN-IDENTIFICATION MODE (2026-08-29)
-   # Float debounce cut from delayed_on 2s / delayed_off 30s to 100ms/100ms so a
-   # finger touch registers instantly while mapping which XKC is on which GPIO.
-   # RESTORE TO 2s / 30s BEFORE ANY WATER GOES BACK IN — the 30s delayed_off is
-   # what stops air/stir slosh from flapping the floats. See the note below.
-   # ============================================================================
    - platform: gpio
      pin:
        number: GPIO21
@@ -158,8 +151,8 @@ binary_sensor:
      # (Applies to every float below; recovered 2026-08-16 from the LXC copy,
      # where it had been added via the dashboard and never pushed back.)
      filters:
-       - delayed_on: 100ms
-       - delayed_off: 100ms
+       - delayed_on: 2s
+       - delayed_off: 30s
      on_release:
        - pulse_counter.set_total_pulses:
            id: flow_rate_irrigation_tent
@@ -174,8 +167,8 @@ binary_sensor:
      id: feed_half_irrigation_tent
      device_class: moisture
      filters:
-       - delayed_on: 100ms
-       - delayed_off: 100ms
+       - delayed_on: 2s
+       - delayed_off: 30s
 
    - platform: gpio
      pin:
@@ -186,8 +179,8 @@ binary_sensor:
      id: feed_three_quarter_irrigation_tent
      device_class: moisture
      filters:
-       - delayed_on: 100ms
-       - delayed_off: 100ms
+       - delayed_on: 2s
+       - delayed_off: 30s
 
    - platform: gpio
      pin:
@@ -198,8 +191,8 @@ binary_sensor:
      id: feed_full_irrigation_tent
      device_class: moisture
      filters:
-       - delayed_on: 100ms
-       - delayed_off: 100ms
+       - delayed_on: 2s
+       - delayed_off: 30s
      # On-device overfill interlock: feed reservoir full -> close feed fill valve,
      # independent of HA. Backstops automation.irrigation_block_feed_fill_when_reservoir_full.
      on_press:
@@ -214,8 +207,8 @@ binary_sensor:
      id: flush_empty_irrigation_tent
      device_class: moisture
      filters:
-       - delayed_on: 100ms
-       - delayed_off: 100ms
+       - delayed_on: 2s
+       - delayed_off: 30s
 
    - platform: gpio
      pin:
@@ -226,8 +219,8 @@ binary_sensor:
      id: flush_half_irrigation_tent
      device_class: moisture
      filters:
-       - delayed_on: 100ms
-       - delayed_off: 100ms
+       - delayed_on: 2s
+       - delayed_off: 30s
 
    - platform: gpio
      pin:
@@ -238,8 +231,8 @@ binary_sensor:
      id: flush_full_irrigation_tent
      device_class: moisture
      filters:
-       - delayed_on: 100ms
-       - delayed_off: 100ms
+       - delayed_on: 2s
+       - delayed_off: 30s
      # On-device overfill interlock: flush reservoir full -> close flush fill valve,
      # independent of HA. Backstops automation.irrigation_block_flush_fill_when_reservoir_full.
      on_press:
