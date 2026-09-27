@@ -21,7 +21,10 @@ api:
 
 ota:
   - platform: esphome
-    password: !secret grow_tower_ota_password
+    # 2026-09-20: OTA encryption replaces the password (mutually exclusive).
+    # Bare encryption: reuses this device grow_tower_api_key. Plaintext OTA
+    # fallback is removed in ESPHome 2027.3.0.
+    encryption:
 
 wifi:
   ssid: !secret wifi_ssid

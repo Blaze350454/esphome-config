@@ -15,7 +15,10 @@ api:
 
 ota:
   - platform: esphome
-    password: !secret grow_tent_one_ota_password
+    # 2026-09-20: OTA encryption replaces the password (mutually exclusive).
+    # Bare encryption: reuses this device grow_tent_one_api_key. Plaintext OTA
+    # fallback is removed in ESPHome 2027.3.0.
+    encryption:
 
 wifi:
   # Grow-area AP (GT784WN bridge @ 192.168.2.250, 2026-07-10) preferred;

@@ -19,7 +19,10 @@ api:
 
 ota:
   - platform: esphome
-    password: !secret test_esp32_ota_password
+    # 2026-09-20: OTA encryption replaces the password (mutually exclusive).
+    # Bare encryption: reuses this device test_esp32_api_key. Plaintext OTA
+    # fallback is removed in ESPHome 2027.3.0.
+    encryption:
 
 wifi:
   ssid: !secret wifi_ssid_grow
