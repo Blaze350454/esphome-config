@@ -75,7 +75,7 @@ tca9548a:
       - bus_id: mux_stem
         channel: 2
       - bus_id: mux_controller
-        channel: 3
+        channel: 5  # moved off ch3 2026-10-07: ch3 stayed mute on two different SHT41s
       - bus_id: mux_co2
         channel: 4
 
