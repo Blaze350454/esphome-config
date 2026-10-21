@@ -67,6 +67,8 @@ esphome:
       - valve.close: flush_fill_valve_irrigation_tent
       - valve.close: feed_fill_irrigation_valve_tent
       - valve.close: feed_valve_irrigation_tent
+      - valve.close: main_valve_irrigation_tent
+      - valve.close: feed_return_valve_irrigation_tent
       # Air diverter to BOTH OPEN on every boot. Never leave a reservoir cut off
       # after a reboot, and never come up with a line the pump has to work against.
       #
@@ -375,12 +377,35 @@ output:
        mode: OUTPUT
      id: feed_valve_irrigation_tent_output
 
+   # ---- Single-pump redesign valves (added 2026-10-20) ----
+   # Board is a 38-pin ESP32-WROOM-32E DevKitC. Every plain GPIO is taken, so both new
+   # relays sit on STRAPPING pins, chosen because they are safe for an active-HIGH relay:
+   #   GPIO2 - internal pull-down, LOW at boot -> relay stays off. Only matters for
+   #           download mode, which also needs GPIO0 low.
+   #   GPIO5 - weak pull-up, HIGH at boot. Too weak to drive the relay input, but
+   #           confirm with 3 dry power-cycles that it does not click.
+   # Never use GPIO12 (flash-voltage strap: HIGH at boot = ESP will not start) or GPIO0
+   # (boot mode). GPIO36/39 are input-only - keep 36 for the suction transducer.
+   - platform: gpio
+     pin:
+       number: GPIO2
+       mode: OUTPUT
+       ignore_strapping_warning: true
+     id: main_valve_irrigation_tent_output
+
+   - platform: gpio
+     pin:
+       number: GPIO5
+       mode: OUTPUT
+       ignore_strapping_warning: true
+     id: feed_return_valve_irrigation_tent_output
+
    # ---- Air diverter servo PWM (single-servo rebuild 2026-08-09) ----
    # 50 Hz signal pin for the ONE DS3225 that drives the single-cam air diverter.
    # FULL WIRING (signal + power + the mandatory common ground) is documented with
    # the air_servo_pin substitution at the top of this file — read that before wiring.
-   # GPIO5 carried the second servo in the retired 2-servo design and is now FREE.
-   # It is a strapping pin, so pick it last if something else ever needs a pin here.
+   # GPIO5 carried the second servo in the retired 2-servo design; since 2026-10-20 it
+   # drives the FEED-RETURN relay (see the output block above).
    - platform: ledc
      pin: ${air_servo_pin}
      frequency: 50 Hz
@@ -424,6 +449,20 @@ script:
       - delay: ${valve_max_on_time}
       - logger.log: "WATCHDOG: Feed Valve exceeded max-on time — force closing"
       - valve.close: feed_valve_irrigation_tent
+
+  - id: watchdog_main_valve
+    mode: restart
+    then:
+      - delay: ${valve_max_on_time}
+      - logger.log: "WATCHDOG: Main Valve exceeded max-on time — force closing"
+      - valve.close: main_valve_irrigation_tent
+
+  - id: watchdog_feed_return_valve
+    mode: restart
+    then:
+      - delay: ${valve_max_on_time}
+      - logger.log: "WATCHDOG: Feed Return Valve exceeded max-on time — force closing"
+      - valve.close: feed_return_valve_irrigation_tent
 
 valve:
    - platform: template
@@ -479,7 +518,53 @@ valve:
      close_action:
        - output.turn_off: feed_valve_irrigation_tent_output
        - script.stop: watchdog_feed_valve
+       # FEED-RETURN is only ever open alongside FEED-IN (this valve) - see below.
+       - valve.close: feed_return_valve_irrigation_tent
      optimistic: true
+
+   # MAIN: the delivery valve after the flow meter (single-pump redesign).
+   - platform: template
+     name: "Main Valve"
+     id: main_valve_irrigation_tent
+     open_action:
+       - output.turn_on: main_valve_irrigation_tent_output
+       - script.execute: watchdog_main_valve
+     close_action:
+       - output.turn_off: main_valve_irrigation_tent_output
+       - script.stop: watchdog_main_valve
+     optimistic: true
+
+   # FEED-RETURN: pump bypass back into the feed tank. It used to be coil-paralleled with
+   # FEED-IN, which made a return to the wrong tank physically impossible. On its own
+   # relay (user, 2026-10-20) that guarantee has to live here instead: it refuses to open
+   # unless the Feed Valve (FEED-IN) is open, and closing the Feed Valve closes it.
+   # Not optimistic, so a refused open publishes CLOSED rather than a fake OPEN.
+   - platform: template
+     name: "Feed Return Valve"
+     id: feed_return_valve_irrigation_tent
+     optimistic: false
+     open_action:
+       - if:
+           condition:
+             valve.is_open: feed_valve_irrigation_tent
+           then:
+             - output.turn_on: feed_return_valve_irrigation_tent_output
+             - script.execute: watchdog_feed_return_valve
+             - valve.template.publish:
+                 id: feed_return_valve_irrigation_tent
+                 state: OPEN
+           else:
+             - logger.log: "INTERLOCK: Feed Return refused - Feed Valve (FEED-IN) is closed"
+             - output.turn_off: feed_return_valve_irrigation_tent_output
+             - valve.template.publish:
+                 id: feed_return_valve_irrigation_tent
+                 state: CLOSED
+     close_action:
+       - output.turn_off: feed_return_valve_irrigation_tent_output
+       - script.stop: watchdog_feed_return_valve
+       - valve.template.publish:
+           id: feed_return_valve_irrigation_tent
+           state: CLOSED
 
 # ---- Reservoir air-line diverter servo (single-servo rebuild 2026-08-09) ----
 # ONE DS3225 drives a single symmetric cam serving BOTH pinch stations on the 1/2"
