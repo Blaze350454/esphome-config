@@ -546,7 +546,8 @@ valve:
      open_action:
        - if:
            condition:
-             valve.is_open: feed_valve_irrigation_tent
+             # No valve.is_open condition exists (2026.9) - ask the Valve directly.
+             lambda: 'return id(feed_valve_irrigation_tent).is_fully_open();'
            then:
              - output.turn_on: feed_return_valve_irrigation_tent_output
              - script.execute: watchdog_feed_return_valve
