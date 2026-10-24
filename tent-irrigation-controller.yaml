@@ -292,9 +292,12 @@ sensor:
        - sliding_window_moving_average:
            window_size: 5
            send_every: 1
+       # 2026-10-24 (user): the dead 0-30 psi pre transducer is replaced by a
+       # 0-60 psi unit. Same 0.5-4.5 V signal through the same 10k/20k divider,
+       # so only the span changes, 30 -> 60. Post (GPIO35) stays 0-30.
        - lambda: |-
            if (x < 0.20f) return NAN;
-           float psi = (x - 0.333f) / (3.0f - 0.333f) * 30.0f;
+           float psi = (x - 0.333f) / (3.0f - 0.333f) * 60.0f;
            return psi < 0.0f ? 0.0f : psi;
      unit_of_measurement: "psi"
      device_class: pressure
