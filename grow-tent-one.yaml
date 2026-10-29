@@ -8,6 +8,8 @@ esp32:
     type: esp-idf
 
 logger:
+  # 2026-10-29: UART0 (TX21/RX20, both unused) frees GPIO18 (USB D-) from USB-Serial-JTAG -- it is the fan tach input
+  hardware_uart: UART0
 
 api:
   encryption:
