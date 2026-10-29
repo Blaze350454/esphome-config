@@ -89,7 +89,7 @@ sensor:
       rising_edge: INCREMENT
       falling_edge: DISABLE
     use_pcnt: false
-    internal_filter: 100us
+    internal_filter: 2ms  # 2026-10-29: was 100us; rejects pump-relay switching spikes (real tach pulse ~5 ms at 3000 RPM)
     unit_of_measurement: "RPM"
     accuracy_decimals: 0
     filters:
