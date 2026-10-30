@@ -66,6 +66,12 @@ fan:
     output: humidifier_fan_pwm_output
     name: "Humidifier Fan PWM"
     id: humidifier_fan_pwm
+    # 2026-10-30: Noctua PWM fans don't stop at 0% -- fan on/off switches the +12 V relay (GPIO5)
+    restore_mode: ALWAYS_OFF
+    on_turn_on:
+      - switch.turn_on: humidifier_fan_power
+    on_turn_off:
+      - switch.turn_off: humidifier_fan_power
 
 ################ Sensors ################
 sensor:
@@ -117,12 +123,15 @@ switch:
       - lambda: |-
           id(manual_table_drain_pump_irrigation_tent_switch_override) = true;
 
+  # 2026-10-30: was the spare "Extra Relay". Switches the humidifier fan's +12 V (HW-083B buck
+  # OUT+ -> COM, NO -> fan yellow); fan ground stays common with the ESP.
   - platform: gpio
-    name: "Extra Relay"
+    name: "Humidifier Fan Power"
     pin:
       number: GPIO5
       inverted: false
-    id: extra_relay
+    id: humidifier_fan_power
+    restore_mode: ALWAYS_OFF
 
 ################ Globals ################
 globals:
