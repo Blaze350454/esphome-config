@@ -101,7 +101,7 @@ sensor:
     unit_of_measurement: "RPM"
     accuracy_decimals: 0
     filters:
-      - multiply: 0.288
+      - multiply: 0.5  # 2026-10-30: was 0.288 (read ~58% low); pulses/min / 2 pulses per rev
 
   # DS18B20 reservoir temperature
   # NOTE: Address TBD  flash once, check logs for scanned address, then add here
