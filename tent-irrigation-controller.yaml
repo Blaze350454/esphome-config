@@ -469,6 +469,10 @@ valve:
      name: "Flush Valve"
      id: flush_valve_irrigation_tent
      open_action:
+       # ONE PUMP (2026-10-31): mirror of the Feed Valve interlock. Closing the Feed Valve
+       # also closes FEED-RETURN (its close_action), so the bypass can never dump flush
+       # water into the feed tank.
+       - valve.close: feed_valve_irrigation_tent
        - output.turn_on: flush_valve_irrigation_tent_output
        - script.execute: watchdog_flush_valve
      close_action:
@@ -502,6 +506,10 @@ valve:
      name: "Feed Valve"
      id: feed_valve_irrigation_tent
      open_action:
+       # ONE PUMP (2026-10-31): FEED-IN and FLUSH-IN must never be open together, or the
+       # single pump draws from both tanks at once. Close the other IN valve FIRST, in the
+       # same action, so no command order from HA (or a dashboard tap) can overlap them.
+       - valve.close: flush_valve_irrigation_tent
        - output.turn_on: feed_valve_irrigation_tent_output
        - script.execute: watchdog_feed_valve
      close_action:
